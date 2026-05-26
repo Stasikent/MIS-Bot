@@ -1,0 +1,68 @@
+{
+  "mis": {
+    "visit_plus_offset": [-18, 0],
+    "reason_field_offset": [95, 0],
+    "goal_dropdown_offset": [0, 0],
+    "history_menu_offset": [0, 0],
+    "history_fluoro_item_offset": [0, 0],
+    "templates_anchor_offset": [0, 0],
+    "template_use_offset": [0, 0],
+    "service_price_zero_offset": [0, 0],
+    "search_anchor_offset": [0, 0],
+    "work_plus_offset": [0, 0],
+    "study_date_label_offset": [220, 0],
+    "search_anchor_x_offset": 210,
+    "dob_region": [
+      618,
+      272,
+      135,
+      34
+    ],
+    "dob_click_point": [
+      670,
+      287
+    ],
+    "row_height": 28,
+    "max_patient_rows": 6,
+    "work_plus_fallback_point": [
+      935,
+      395
+    ],
+    "diagnosis_code_offset": [
+      -5,
+      5
+    ],
+    "diagnosis_cancel_item_offset": [
+      -40,
+      12
+    ],
+    "diagnosis_drop_offset": [
+      0,
+      0
+    ]
+  },
+  "ris": {
+    "search_button_to_field_offset": [
+      -170,
+      0
+    ],
+    "patient_card_region_offset": {
+      "left": 10,
+      "top": -5,
+      "width": 340,
+      "height": 250
+    },
+    "birth_region_inside_card": {
+      "left": 12,
+      "top": 82,
+      "width": 190,
+      "height": 40
+    },
+    "debug_card_region": {
+      "left": 70,
+      "top": 165,
+      "width": 340,
+      "height": 250
+    }
+  }
+}

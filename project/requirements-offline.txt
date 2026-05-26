@@ -1,0 +1,15 @@
+pyautogui
+pygetwindow
+pillow
+mss
+pytesseract
+opencv-python
+rapidfuzz
+numpy
+mouseinfo
+pyscreeze
+pyrect
+pymsgbox
+pytweening
+packaging
+pyperclip

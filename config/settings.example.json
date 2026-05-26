@@ -1,0 +1,24 @@
+{
+  "common": {
+    "tesseract_path": "***/tesseract/tesseract.exe",
+    "stop_on_critical": true
+  },
+  "mis": {
+    "window_title": "***",
+    "sign_password": "***",
+    "mode_templates": {
+      "normal": "template_row_normal",
+      "cardiomegaly": "template_row_cardiomegaly",
+      "two_projections": "template_row_two_projections",
+      "manual_edit": "template_row_normal"
+    }
+  },
+  "ris": {
+    "window_title": "***",
+    "ris_url": "***",
+    "valid_service_substrings": [
+      "***",
+      "***"
+    ]
+  }
+}
