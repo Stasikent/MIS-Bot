@@ -1,0 +1,104 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+venv/
+.venv/
+env/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Build
+# =========================
+build/
+dist/
+*.spec
+
+# =========================
+# Logs / debug
+# =========================
+logs/
+project/logs/
+
+*.log
+
+error_*.png
+success_*.png
+stop_*.png
+debug_*.png
+dob_*.png
+
+# =========================
+# Local config
+# =========================
+config/settings.json
+
+# =========================
+# Sessions
+# =========================
+session*.json
+sessions/
+
+# =========================
+# OCR captures
+# =========================
+captures/
+
+# =========================
+# Offline packages
+# =========================
+offline_packages/
+installers/
+
+# =========================
+# Tesseract binaries
+# =========================
+tesseract/
+
+# =========================
+# Test images
+# =========================
+sample_direction.jpg
+sample_direction_2.jpg
+sample_direction_3.jpg
+
+# =========================
+# Temp folders
+# =========================
+Удалить/
+temp/
+tmp/
+
+# =========================
+# OS
+# =========================
+Thumbs.db
+.DS_Store
+
+
+*копия*.py
+
+project/screenshots/
+
+
+# Backups / archives
+*.zip
+*.7z
+*.rar
+
+# PyInstaller
+*.spec
+
+# Local OCR/debug samples
+sample_*.jpg
+sample_*.png

@@ -1,0 +1,372 @@
+{
+  "mis": {
+    "search_anchor": {
+      "file": "search_anchor.png",
+      "confidence": 0.8,
+      "description": "Якорь строки поиска в МИС"
+    },
+    "visit_plus": {
+      "file": "visit_plus.png",
+      "confidence": 0.8,
+      "description": "Плюс открытия приема"
+    },
+    "without_referral": {
+      "file": "without_referral.png",
+      "confidence": 0.8,
+      "description": "Окно Прием без направления"
+    },
+    "reason_field": {
+      "file": "reason_field.png",
+      "confidence": 0.8,
+      "description": "Поле Повод обращения"
+    },
+    "goal_dropdown": {
+      "file": "goal_dropdown.png",
+      "confidence": 0.8,
+      "description": "Выпадающий список цели обращения"
+    },
+    "work_plus": {
+      "file": "work_plus.png",
+      "confidence": 0.8,
+      "description": "Плюс добавления услуги"
+    },
+    "service_price_zero": {
+      "file": "service_price_zero.png",
+      "confidence": 0.8,
+      "description": "Строка услуги с ценой 0"
+    },
+    "history_menu": {
+      "file": "History_menu.png",
+      "confidence": 0.78,
+      "description": "Меню История болезни"
+    },
+    "history_fluoro_item": {
+      "file": "history_fluoro_item.png",
+      "confidence": 0.78,
+      "description": "Флюорографическое исследование"
+    },
+    "protocol_anchor": {
+      "file": "protocol_anchor.png",
+      "confidence": 0.8,
+      "description": "Якорь открытого протокола"
+    },
+    "templates_anchor": {
+      "file": "templates_anchor.png",
+      "confidence": 0.8,
+      "description": "Кнопка Шаблоны"
+    },
+    "template_use": {
+      "file": "template_use.png",
+      "confidence": 0.78,
+      "description": "Пункт Выбрать"
+    },
+    "template_row_normal": {
+      "file": "template_row_normal.png",
+      "confidence": 0.78,
+      "description": "Строка шаблона Норма"
+    },
+    "template_row_cardiomegaly": {
+      "file": "template_row_cardiomegaly.png",
+      "confidence": 0.78,
+      "description": "Строка шаблона Кардиомегалия"
+    },
+    "template_row_two_projections": {
+      "file": "template_row_two_projections.png",
+      "confidence": 0.78,
+      "description": "Строка шаблона Две проекции"
+    },
+    "sign_password_dialog": {
+      "file": "sign_password_dialog.png",
+      "confidence": 0.72,
+      "description": "Диалог подписи"
+    },
+    "sign_password_field": {
+      "file": "sign_password_field.png",
+      "confidence": 0.72,
+      "description": "Поле пароля подписи"
+    },
+    "diagnosis_drop": {
+      "file": "diagnosis_drop.png",
+      "confidence": 0.8,
+      "description": "Выпадающее меню диагноза"
+    },
+    "diagnosis_code": {
+      "file": "diagnosis_code.png",
+      "confidence": 0.8,
+      "description": "Код диагноза"
+    },
+    "paste_context_item": {
+      "file": "paste_context_item.png",
+      "confidence": 0.9
+    },
+    "study_date_label": {
+    "file": "study_date_label.png",
+    "confidence": 0.82,
+    "description": "Якорь поля даты исследования"
+    },
+    "diagnosis_cancel_item": {
+      "file": "diagnosis_cancel_item.png",
+      "confidence": 0.8,
+      "description": "Пункт Отменить в диагнозе"
+    },
+    "xray_service_item": {
+      "file": "xray_service_item.png",
+      "confidence": 0.82,
+      "description": "Пункт Рентгенографическое исследование (униф.)"
+    },
+    "template_owner_dropdown": {
+      "file": "template_owner_dropdown.png",
+      "confidence": 0.82,
+      "description": "Выпадающий список Владелец в окне шаблонов"
+    },
+    "template_owner_only_mine": {
+      "file": "template_owner_only_mine.png",
+      "confidence": 0.82,
+      "description": "Пункт Только свои в списке владельца шаблонов"
+    },
+    "xray_service_item": {
+      "file": "xray_service_item.png",
+      "confidence": 0.82,
+      "description": "Рентгенографическое исследование"
+    },
+    "template_owner_dropdown": {
+      "file": "template_owner_dropdown.png",
+      "confidence": 0.82,
+      "description": "Владелец шаблона"
+    },
+    "template_owner_only_mine": {
+      "file": "template_owner_only_mine.png",
+      "confidence": 0.82,
+      "description": "Только свои шаблоны"
+    },
+    "template_diagnosis_clear_cross": {
+      "file": "template_diagnosis_clear_cross.png",
+      "confidence": 0.82,
+      "description": "Красный крест диагноза в шаблоне"
+    },
+
+    "template_row_xray_abdomen": {
+      "file": "template_row_xray_abdomen.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Брюшная полость"
+    },
+    "template_row_xray_skull": {
+      "file": "template_row_xray_skull.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: череп"
+    },
+    "template_row_xray_ankle": {
+      "file": "template_row_xray_ankle.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Голеностоп связки"
+    },
+    "template_row_xray_sternum": {
+      "file": "template_row_xray_sternum.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: грудина норм"
+    },
+    "template_row_xray_t_spine": {
+      "file": "template_row_xray_t_spine.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ГОП оз1 ст"
+    },
+    "template_row_xray_stomach": {
+      "file": "template_row_xray_stomach.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Желудок"
+    },
+    "template_row_xray_irrigoscopy": {
+      "file": "template_row_xray_irrigoscopy.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Ирригоскопия"
+    },
+    "template_row_xray_lower_leg": {
+      "file": "template_row_xray_lower_leg.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: голень"
+    },
+    "template_row_xray_clavicle": {
+      "file": "template_row_xray_clavicle.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Ключицы"
+    },
+    "template_row_xray_knee": {
+      "file": "template_row_xray_knee.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Коленн ДОА2"
+    },
+    "template_row_xray_hand": {
+      "file": "template_row_xray_hand.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: кисть"
+    },
+    "template_row_xray_nasal_bones": {
+      "file": "template_row_xray_nasal_bones.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Кости носа"
+    },
+    "template_row_xray_sacrum_coccyx": {
+      "file": "template_row_xray_sacrum_coccyx.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: крестец копчик норм"
+    },
+    "template_row_xray_chest": {
+      "file": "template_row_xray_chest.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ОГК Н"
+    },
+    "template_row_xray_c_spine": {
+      "file": "template_row_xray_c_spine.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ШОП выпрямление лорд"
+    },
+    "template_row_xray_hip_pelvis": {
+      "file": "template_row_xray_hip_pelvis.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Тазобедренный ДОА"
+    },
+    "template_row_xray_foot": {
+      "file": "template_row_xray_foot.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Стопа норм"
+    },
+    "template_row_xray_calcaneus": {
+      "file": "template_row_xray_calcaneus.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Пяточная кость"
+    },
+    "template_row_xray_ribs": {
+      "file": "template_row_xray_ribs.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ребра 8"
+    },
+    "template_row_xray_sinuses": {
+      "file": "template_row_xray_sinuses.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ППН норма"
+    },
+    "template_row_xray_wrist_forearm": {
+      "file": "template_row_xray_wrist_forearm.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Лучезапястный норм"
+    },
+    "template_row_xray_l_spine": {
+      "file": "template_row_xray_l_spine.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: ПОП норма"
+    },
+    "template_row_xray_elbow": {
+      "file": "template_row_xray_elbow.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Локтевой ДОА"
+    },
+    "template_row_xray_shoulder": {
+      "file": "template_row_xray_shoulder.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Плечевой МОС"
+    },
+    "template_row_xray_nasopharynx": {
+      "file": "template_row_xray_nasopharynx.png",
+      "confidence": 0.82,
+      "description": "Рентген шаблон: Носоглотка А3 ст"
+    },
+
+    "xray_field_study_number": {
+      "file": "xray_field_study_number.png",
+      "confidence": 0.82,
+      "description": "Поле Номер исследования"
+    },
+    "xray_field_description": {
+      "file": "xray_field_description.png",
+      "confidence": 0.82,
+      "description": "Поле Описание результатов"
+    },
+    "xray_field_conclusion": {
+      "file": "xray_field_conclusion.png",
+      "confidence": 0.82,
+      "description": "Поле Заключение"
+    },
+    "close_case_title": {
+      "file": "close_case_title.png",
+      "confidence": 0.82,
+      "description": "Окно Закрытие случая"
+    },
+    "epicrisis_question": {
+      "file": "epicrisis_question.png",
+      "confidence": 0.82,
+      "description": "Вопрос сформировать эпикриз автоматически"
+    },
+    "epicrisis_no": {
+      "file": "epicrisis_no.png",
+      "confidence": 0.82,
+      "description": "Кнопка Нет в окне эпикриза"
+    },
+    "close_with_current_diagnosis": {
+      "file": "close_with_current_diagnosis.png",
+      "confidence": 0.82,
+      "description": "Закрыть с текущим диагнозом"
+    },
+    "diagnosis_active_z0": {
+      "file": "diagnosis_active_z0.png",
+      "confidence": 0.82,
+      "description": "Активный диагноз (начало Z0)"
+    },
+    "inpatient_question": {
+      "file": "inpatient_question.png",
+      "confidence": 0.82,
+      "description": "Окно: пациент находится на стационарном лечении"
+    },
+    "inpatient_yes_button": {
+      "file": "inpatient_yes_button.png",
+      "confidence": 0.82,
+      "description": "Кнопка Да в окне стационарного пациента"
+    },
+    "add_diagnosis_question": {
+      "file": "add_diagnosis_question.png",
+      "confidence": 0.82,
+      "description": "Окно: добавить диагноз"
+    },
+    "add_diagnosis_no_button": {
+      "file": "add_diagnosis_no_button.png",
+      "confidence": 0.82,
+      "description": "Кнопка Нет в окне добавления диагноза"
+    }
+  },
+  "ris": {
+    "ris_search_button_active": {
+      "file": "ris_search_button_active.png",
+      "confidence": 0.82,
+      "description": "Активная синяя кнопка поиска в РИС"
+    },
+    "ris_patient_card_side": {
+      "file": "ris_patient_card_side.png",
+      "confidence": 0.8,
+      "description": "Боковая сторона карточки пациента в РИС"
+    },
+    "ris_apparatus_field": {
+      "file": "ris_apparatus_field.png",
+      "confidence": 0.8,
+      "description": "Поле аппарата в РИС"
+    },
+    "ris_apparatus_target": {
+      "file": "ris_apparatus_target.png",
+      "confidence": 0.78,
+      "description": "Строка нужного аппарата в РИС"
+    },
+    "ris_start_button": {
+      "file": "ris_start_button.png",
+      "confidence": 0.8,
+      "description": "Кнопка Начать исследование"
+    },
+    "ris_finish_button": {
+      "file": "ris_finish_button.png",
+      "confidence": 0.8,
+      "description": "Кнопка Завершить"
+    },
+    "ris_completed_status": {
+      "file": "ris_completed_status.png",
+      "confidence": 0.8,
+      "description": "Статус Завершено"
+    }
+  }
+}

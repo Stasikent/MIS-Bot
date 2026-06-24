@@ -1,0 +1,141 @@
+{
+  "default": "template_row_xray_default",
+  "rules": [
+    {
+      "keywords": ["брюшная полость"],
+      "template_key": "template_row_xray_abdomen",
+      "template_name": "Брюшная полость"
+    },
+    {
+      "keywords": [
+        "верхн/челюсть",
+        "верхняя челюсть",
+        "височно-н/чел",
+        "височно-нижнечелюст",
+        "височные кости",
+        "глазницы",
+        "затылочн кость",
+        "затылочная кость",
+        "череп",
+        "турецкое седло"
+      ],
+      "template_key": "template_row_xray_skull",
+      "template_name": "череп"
+    },
+    {
+      "keywords": ["голеностоп с-в", "голеностопный сустав", "голеностоп"],
+      "template_key": "template_row_xray_ankle",
+      "template_name": "Голеностоп связки"
+    },
+    {
+      "keywords": ["грудина"],
+      "template_key": "template_row_xray_sternum",
+      "template_name": "грудина норм"
+    },
+    {
+      "keywords": ["грудн/отд позв", "грудной отдел позвоночника", "грудн"],
+      "template_key": "template_row_xray_t_spine",
+      "template_name": "ГОП оз1 ст"
+    },
+    {
+      "keywords": ["желудок дв/контр", "желудок станд", "желудок", "пищевод"],
+      "template_key": "template_row_xray_stomach",
+      "template_name": "Желудок"
+    },
+    {
+      "keywords": ["ирригография", "ирригоскопия"],
+      "template_key": "template_row_xray_irrigoscopy",
+      "template_name": "Ирригоскопия"
+    },
+    {
+      "keywords": ["голень"],
+      "template_key": "template_row_xray_lower_leg",
+      "template_name": "голень"
+    },
+    {
+      "keywords": ["ключица", "ключицы"],
+      "template_key": "template_row_xray_clavicle",
+      "template_name": "Ключицы"
+    },
+    {
+      "keywords": ["коленный с-в", "коленный сустав", "колено"],
+      "template_key": "template_row_xray_knee",
+      "template_name": "Коленн ДОА2"
+    },
+    {
+      "keywords": ["кисть пальцы", "кисть", "кисти", "пальцы кисти"],
+      "template_key": "template_row_xray_hand",
+      "template_name": "кисть"
+    },
+    {
+      "keywords": ["кости носа"],
+      "template_key": "template_row_xray_nasal_bones",
+      "template_name": "Кости носа"
+    },
+    {
+      "keywords": ["крестец, копчик", "крестец", "копчик", "крестцово-копчиков"],
+      "template_key": "template_row_xray_sacrum_coccyx",
+      "template_name": "крестец копчик норм"
+    },
+    {
+      "keywords": ["легкие диагн", "легкие", "средостение", "огк", "органы грудной клетки", "грудная клетка"],
+      "template_key": "template_row_xray_chest",
+      "template_name": "ОГК Н"
+    },
+    {
+      "keywords": ["шейн/отд позв", "шейный отдел позвоночника", "шейный отдел", "шоп"],
+      "template_key": "template_row_xray_c_spine",
+      "template_name": "ШОП выпрямление лорд"
+    },
+    {
+      "keywords": ["бедро", "тазобедр с-в", "тазобедренный сустав", "таз обзорно", "таз"],
+      "template_key": "template_row_xray_hip_pelvis",
+      "template_name": "Тазобедренный ДОА"
+    },
+    {
+      "keywords": ["стопа с нагрузкой", "стопа пальцы", "стопа", "стопы"],
+      "template_key": "template_row_xray_foot",
+      "template_name": "Стопа норм"
+    },
+    {
+      "keywords": ["стопа пяточ/кость", "пяточная кость", "пяточ/кость"],
+      "template_key": "template_row_xray_calcaneus",
+      "template_name": "Пяточная кость"
+    },
+    {
+      "keywords": ["ребра", "рёбра"],
+      "template_key": "template_row_xray_ribs",
+      "template_name": "ребра 8"
+    },
+    {
+      "keywords": ["прид пазухи носа", "придаточные пазухи носа", "ппн", "пазухи"],
+      "template_key": "template_row_xray_sinuses",
+      "template_name": "ППН гайморит"
+    },
+    {
+      "keywords": ["предплечье", "лучезапястный с-в", "лучезапястный сустав"],
+      "template_key": "template_row_xray_wrist_forearm",
+      "template_name": "Лучезапястный норм"
+    },
+    {
+      "keywords": ["поясн/отд позв", "поясничный отдел позвоночника", "поп", "пояснич"],
+      "template_key": "template_row_xray_l_spine",
+      "template_name": "ПОП норма"
+    },
+    {
+      "keywords": ["локтевой с-в", "локтевой сустав", "локоть"],
+      "template_key": "template_row_xray_elbow",
+      "template_name": "Локтевой ДОА"
+    },
+    {
+      "keywords": ["плечевой с-в", "плечевой сустав", "плечо"],
+      "template_key": "template_row_xray_shoulder",
+      "template_name": "Плечевой МОС"
+    },
+    {
+      "keywords": ["носоглотка"],
+      "template_key": "template_row_xray_nasopharynx",
+      "template_name": "Носоглотка А3 ст"
+    }
+  ]
+}
