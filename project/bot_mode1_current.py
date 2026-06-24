@@ -12,6 +12,9 @@ import pygetwindow as gw
 import pytesseract
 from PIL import Image
 
+import cv2
+import numpy as np
+
 from config.loader import (
     COMMON_SETTINGS,
     MIS_SETTINGS,
@@ -70,14 +73,32 @@ SERVICE_PRICE_ZERO_OFFSET = tuple(MIS_COORDS.get("service_price_zero_offset", (0
 SEARCH_ANCHOR_OFFSET = tuple(MIS_COORDS.get("search_anchor_offset", (0, 0)))
 WORK_PLUS_OFFSET = tuple(MIS_COORDS.get("work_plus_offset", (0, 0)))
 
+XRAY_SERVICE_ITEM_OFFSET = tuple(MIS_COORDS.get("xray_service_item_offset", (0, 0)))
+TEMPLATE_OWNER_DROPDOWN_OFFSET = tuple(MIS_COORDS.get("template_owner_dropdown_offset", (0, 0)))
+TEMPLATE_OWNER_ONLY_MINE_OFFSET = tuple(MIS_COORDS.get("template_owner_only_mine_offset", (0, 0)))
+TEMPLATE_DIAGNOSIS_CLEAR_CROSS_OFFSET = tuple(MIS_COORDS.get("template_diagnosis_clear_cross_offset", (0, 0)))
+TEMPLATE_SELECT_BUTTON_OFFSET = tuple(MIS_COORDS.get("template_select_button_offset", (0, 0)))
+XRAY_TEMPLATE_ROW_OFFSET = tuple(MIS_COORDS.get("xray_template_row_offset", (0, 0)))
+
 SERVICE_WINDOW_WAIT = timings["service_window_wait"]
 HISTORY_MENU_WAIT = timings["history_menu_wait"]
 WITHOUT_REFERRAL_TIMEOUT = timings["without_referral_timeout"]
 TEMPLATE_LOAD_WAIT = timings["template_load_wait"]
 
+INPATIENT_YES_BUTTON_OFFSET = tuple(MIS_COORDS.get("inpatient_yes_button_offset", (0, 0)))
+ADD_DIAGNOSIS_NO_BUTTON_OFFSET = tuple(MIS_COORDS.get("add_diagnosis_no_button_offset", (0, 0)))
+
+XRAY_SERVICE_ITEM_OFFSET = tuple(MIS_COORDS.get("xray_service_item_offset", (0, 0)))
+TEMPLATE_OWNER_DROPDOWN_OFFSET = tuple(MIS_COORDS.get("template_owner_dropdown_offset", (0, 0)))
+TEMPLATE_OWNER_ONLY_MINE_OFFSET = tuple(MIS_COORDS.get("template_owner_only_mine_offset", (0, 0)))
+
 WAIT_CHECKS = timings.get("wait_checks", 3)
 WAIT_PAUSE = timings.get("wait_pause", 3.0)
 WAIT_PROBE_TIMEOUT = timings.get("wait_probe_timeout", 0.5)
+
+XRAY_FIELD_STUDY_NUMBER_OFFSET = tuple(MIS_COORDS.get("xray_field_study_number_offset", (260, 0)))
+XRAY_FIELD_DESCRIPTION_OFFSET = tuple(MIS_COORDS.get("xray_field_description_offset", (260, 0)))
+XRAY_FIELD_CONCLUSION_OFFSET = tuple(MIS_COORDS.get("xray_field_conclusion_offset", (260, 0)))
 
 BETWEEN_PATIENTS_PAUSE = timings.get("between_patients_pause", 1.5)
 
@@ -436,10 +457,19 @@ def wait_manual_patient_selection(wait_seconds=MANUAL_PATIENT_SELECT_WAIT):
 
 
 def locate_image_on_screen(template_key: str, confidence=None, timeout=10.0):
-    path = template_file(template_key)
-    if not path.exists():
-        raise FileNotFoundError(f"Шаблон не найден на диске: {path}")
+    try:
+        win = find_mis_window()
+        return locate_template_in_window_cv(
+            win=win,
+            template_key=template_key,
+            confidence=confidence,
+            timeout=timeout,
+        )
+    except Exception as e:
+        log(f"Оконный CV-поиск не сработал для {template_key}: {e}")
 
+    # fallback старым способом
+    path = template_file(template_key)
     conf = template_conf(template_key, 0.82) if confidence is None else confidence
 
     end = time.time() + timeout
@@ -452,7 +482,207 @@ def locate_image_on_screen(template_key: str, confidence=None, timeout=10.0):
             pass
         time.sleep(0.25)
         checkpoint()
+
     return None
+
+def locate_image_in_window(win, template_key: str, confidence=None, timeout=10.0):
+    path = template_file(template_key)
+    if not path.exists():
+        raise FileNotFoundError(f"Шаблон не найден на диске: {path}")
+
+    conf = template_conf(template_key, 0.82) if confidence is None else confidence
+
+    region = (
+        int(win.left),
+        int(win.top),
+        int(win.width),
+        int(win.height),
+    )
+
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            loc = pyautogui.locateCenterOnScreen(
+                str(path),
+                confidence=conf,
+                region=region,
+            )
+            if loc:
+                return loc
+        except pyautogui.ImageNotFoundException:
+            pass
+
+        time.sleep(0.25)
+        checkpoint()
+
+    return None
+
+def locate_image_in_window_safe(win, template_key: str, confidence=None, timeout=10.0):
+    path = template_file(template_key)
+    if not path.exists():
+        raise FileNotFoundError(f"Шаблон не найден на диске: {path}")
+
+    conf = template_conf(template_key, 0.82) if confidence is None else confidence
+
+    end = time.time() + timeout
+
+    while time.time() < end:
+        checkpoint()
+
+        try:
+            img_path = save_window_screenshot(win, prefix="window_probe")
+
+            loc = pyautogui.locateCenterOnScreen(
+                str(path),
+                confidence=conf,
+                region=(int(win.left), int(win.top), int(win.width), int(win.height)),
+            )
+
+            if loc:
+                return loc
+
+        except Exception:
+            pass
+
+        time.sleep(0.25)
+
+    return None
+
+def locate_template_in_window_cv(win, template_key: str, confidence=None, timeout=10.0):
+    path = template_file(template_key)
+    if not path.exists():
+        raise FileNotFoundError(f"Шаблон не найден на диске: {path}")
+
+    conf = template_conf(template_key, 0.82) if confidence is None else confidence
+
+    end = time.time() + timeout
+
+    while time.time() < end:
+        checkpoint()
+
+        try:
+            with mss.mss() as sct:
+                shot = sct.grab({
+                    "left": int(win.left),
+                    "top": int(win.top),
+                    "width": int(win.width),
+                    "height": int(win.height),
+                })
+
+            screen_img = Image.frombytes("RGB", shot.size, shot.rgb)
+            screen_np = cv2.cvtColor(np.array(screen_img), cv2.COLOR_RGB2BGR)
+
+            template_img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if template_img is None:
+                raise RuntimeError(f"Не удалось прочитать шаблон: {path}")
+
+            result = cv2.matchTemplate(screen_np, template_img, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+            if max_val >= conf:
+                th, tw = template_img.shape[:2]
+                x = int(win.left + max_loc[0] + tw / 2)
+                y = int(win.top + max_loc[1] + th / 2)
+
+                log(f"{template_key} найден в окне: score={max_val:.3f}, point=({x},{y})")
+                return pyautogui.Point(x, y)
+
+        except Exception as e:
+            log(f"CV поиск шаблона {template_key}: ошибка {e}")
+
+        time.sleep(0.25)
+
+    return None
+
+def paste_text_safe(text: str):
+    import pyperclip
+
+    pyperclip.copy(text or "")
+    time.sleep(0.1)
+    checkpoint()
+
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.2)
+    checkpoint()
+
+
+def clear_current_field():
+    pyautogui.hotkey("ctrl", "a")
+    time.sleep(0.1)
+    checkpoint()
+
+    pyautogui.press("backspace")
+    time.sleep(0.1)
+    checkpoint()
+
+
+def fill_xray_field_by_label(
+    win,
+    template_key,
+    text,
+    offset,
+    offset_key,
+    label,
+):
+    log(f"XRAY: заполнение поля {label}")
+
+    ok = adaptive_click_template_target(
+        win=win,
+        template_key=template_key,
+        offset=offset,
+        offset_key=offset_key,
+        timeout=8,
+        label=label,
+        clicks=1,
+        expected_template=None,
+        post_click_sleep=0.2,
+    )
+    if not ok:
+        return False
+
+    clear_current_field()
+    paste_text_safe(text)
+    return True
+
+
+def fill_xray_protocol(win, task):
+    log("XRAY: заполнение протокола")
+
+    ok = fill_xray_field_by_label(
+        win=win,
+        template_key="xray_field_study_number",
+        text="-",
+        offset=XRAY_FIELD_STUDY_NUMBER_OFFSET,
+        offset_key="xray_field_study_number_offset",
+        label="Номер исследования",
+    )
+    if not ok:
+        return False
+
+    ok = fill_xray_field_by_label(
+        win=win,
+        template_key="xray_field_description",
+        text=task.description,
+        offset=XRAY_FIELD_DESCRIPTION_OFFSET,
+        offset_key="xray_field_description_offset",
+        label="Описание результатов",
+    )
+    if not ok:
+        return False
+
+    ok = fill_xray_field_by_label(
+        win=win,
+        template_key="xray_field_conclusion",
+        text=task.conclusion,
+        offset=XRAY_FIELD_CONCLUSION_OFFSET,
+        offset_key="xray_field_conclusion_offset",
+        label="Заключение",
+    )
+    if not ok:
+        return False
+
+    log("XRAY: протокол заполнен")
+    return True
 
 
 def wait_for_template_strict(
@@ -508,6 +738,125 @@ def _write_coords_json(data):
     with open(CONFIG_COORDS_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def choose_xray_service(win):
+    log("Выбор услуги: Рентгенографическое исследование")
+
+    clicked = click_template_target(
+        win,
+        "xray_service_item",
+        offset=XRAY_SERVICE_ITEM_OFFSET,
+        offset_key="xray_service_item_offset",
+        timeout=8,
+        label="xray_service_item",
+        clicks=1,
+    )
+    if not clicked:
+        return False
+
+    time.sleep(0.6)
+    checkpoint()
+    return True
+
+
+def choose_only_my_templates(win):
+    log("Фильтр шаблонов: Владелец -> Только свои")
+
+    ok = adaptive_click_template_target(
+        win=win,
+        template_key="template_owner_dropdown",
+        offset=TEMPLATE_OWNER_DROPDOWN_OFFSET,
+        offset_key="template_owner_dropdown_offset",
+        timeout=8,
+        label="template_owner_dropdown",
+        clicks=1,
+        expected_template="template_owner_only_mine",
+        expected_checks=3,
+        expected_pause=0.4,
+        expected_probe_timeout=1.2,
+        post_click_sleep=0.4,
+    )
+    if not ok:
+        return False
+
+    clicked = click_template_target(
+        win,
+        "template_owner_only_mine",
+        offset=TEMPLATE_OWNER_ONLY_MINE_OFFSET,
+        offset_key="template_owner_only_mine_offset",
+        timeout=5,
+        label="template_owner_only_mine",
+        clicks=1,
+    )
+    if not clicked:
+        return False
+
+    time.sleep(0.8)
+    checkpoint()
+    return True
+
+
+def clear_template_diagnosis_if_exists(win):
+    log("Проверяю красный крест диагноза в шаблоне")
+
+    loc = locate_image_on_screen(
+        "template_diagnosis_clear_cross",
+        timeout=2.0,
+    )
+
+    if not loc:
+        log("Красный крест диагноза в шаблоне не найден — пропускаю")
+        return True
+
+    final_x = loc.x + TEMPLATE_DIAGNOSIS_CLEAR_CROSS_OFFSET[0]
+    final_y = loc.y + TEMPLATE_DIAGNOSIS_CLEAR_CROSS_OFFSET[1]
+
+    log(f"Удаляю диагноз из шаблона: ({final_x}, {final_y})")
+
+    if not debug_click_point(final_x, final_y):
+        action = fail(win, f"Небезопасная точка крестика диагноза: ({final_x}, {final_y})")
+        return action == "continue"
+
+    pyautogui.click(final_x, final_y)
+    time.sleep(0.5)
+    checkpoint()
+    return True
+
+
+def choose_xray_template(win, task):
+    template_key = getattr(task, "template_key", "") or ""
+    template_name = getattr(task, "template_name", "") or template_key
+
+    if not template_key:
+        action = fail(
+            win,
+            f"Для исследования '{task.study_name}' не найден template_key.\n"
+            f"Выбери шаблон вручную и нажми 'Продолжить'."
+        )
+        return action == "continue"
+
+    log(f"Выбор рентген-шаблона: {template_name} ({template_key})")
+
+    clicked = click_template_target(
+        win,
+        template_key,
+        offset=TEMPLATE_USE_OFFSET,
+        offset_key="template_use_offset",
+        timeout=8,
+        label=f"xray_template:{template_key}",
+        clicks=1,
+    )
+
+    if not clicked:
+        action = fail(
+            win,
+            f"Не удалось выбрать шаблон: {template_name} ({template_key}).\n"
+            f"Выбери шаблон вручную и нажми 'Продолжить'."
+        )
+        return action == "continue"
+
+    time.sleep(TEMPLATE_LOAD_WAIT)
+    checkpoint()
+    return True
 
 def _save_template_offset(offset_key: str, dx: int, dy: int):
     data = _read_coords_json()
@@ -532,6 +881,14 @@ def _save_template_offset(offset_key: str, dx: int, dy: int):
         "search_anchor_offset": "SEARCH_ANCHOR_OFFSET",
         "work_plus_offset": "WORK_PLUS_OFFSET",
         "study_date_label_offset": "STUDY_DATE_LABEL_OFFSET",
+        "xray_service_item_offset": "XRAY_SERVICE_ITEM_OFFSET",
+        "template_owner_dropdown_offset": "TEMPLATE_OWNER_DROPDOWN_OFFSET",
+        "template_owner_only_mine_offset": "TEMPLATE_OWNER_ONLY_MINE_OFFSET",
+        "template_diagnosis_clear_cross_offset": "TEMPLATE_DIAGNOSIS_CLEAR_CROSS_OFFSET",
+        "template_select_button_offset": "TEMPLATE_SELECT_BUTTON_OFFSET",
+        "xray_template_row_offset": "XRAY_TEMPLATE_ROW_OFFSET",
+        "inpatient_yes_button_offset": "INPATIENT_YES_BUTTON_OFFSET",
+        "add_diagnosis_no_button_offset": "ADD_DIAGNOSIS_NO_BUTTON_OFFSET",
     }
     if offset_key in globals_map:
         globals()[globals_map[offset_key]] = (dx, dy)
@@ -1203,6 +1560,78 @@ def handle_post_visit_plus_flow(win):
 
     log("Окно приема открыто")
     return True
+
+
+def handle_inpatient_popup_if_present(win):
+    """
+    Если после создания приема появляется окно:
+    'Пациент стационарный, вести прием в рамках стационара?'
+    — нажимаем Да.
+    Затем, если появляется окно 'Добавить диагноз?' — нажимаем Нет.
+
+    Возвращает:
+    True  -> стационарное окно было обработано
+    False -> стационарного окна не было
+    """
+    log("Проверяю окно стационарного пациента")
+
+    loc = locate_image_on_screen(
+        "inpatient_question",
+        timeout=1.5,
+    )
+
+    if not loc:
+        log("Окно стационарного пациента не появилось")
+        return False
+
+    log("Найдено окно стационарного пациента -> нажимаю Да")
+
+    clicked = click_template_target(
+        win,
+        "inpatient_yes_button",
+        offset=INPATIENT_YES_BUTTON_OFFSET,
+        offset_key="inpatient_yes_button_offset",
+        timeout=4,
+        label="inpatient_yes_button",
+        clicks=1,
+    )
+    if not clicked:
+        fail(win, "Не удалось нажать Да в окне стационарного пациента")
+        return False
+
+    time.sleep(0.8)
+    checkpoint()
+
+    log("Проверяю окно добавления диагноза")
+
+    loc2 = locate_image_on_screen(
+        "add_diagnosis_question",
+        timeout=2.0,
+    )
+
+    if loc2:
+        log("Найдено окно добавления диагноза -> нажимаю Нет")
+
+        clicked2 = click_template_target(
+            win,
+            "add_diagnosis_no_button",
+            offset=ADD_DIAGNOSIS_NO_BUTTON_OFFSET,
+            offset_key="add_diagnosis_no_button_offset",
+            timeout=4,
+            label="add_diagnosis_no_button",
+            clicks=1,
+        )
+        if not clicked2:
+            fail(win, "Не удалось нажать Нет в окне добавления диагноза")
+            return False
+
+        time.sleep(0.8)
+        checkpoint()
+    else:
+        log("Окно добавления диагноза не появилось")
+
+    return True
+
 
 
 def fill_reason_code(win):
