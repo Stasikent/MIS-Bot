@@ -34,6 +34,43 @@ SETUP_STEPS = [
         ),
     },
     {
+        "key": "inpatient_question",
+        "title": "Вопрос «Пациент в стационаре?»",
+        "kind": "template_only",
+        "description": (
+            "Если на этом рабочем месте появляется вопрос о стационаре, выделите устойчивую "
+            "часть окна. Если окно не используется, шаг можно пропустить."
+        ),
+    },
+    {
+        "key": "inpatient_yes_button",
+        "title": "Стационар → кнопка «Да»",
+        "kind": "template_offset",
+        "offset_key": "inpatient_yes_button_offset",
+        "description": (
+            "При открытом вопросе о стационаре выделите кнопку/якорь «Да» и укажите "
+            "фактическую точку клика. Если ветка не используется, шаг можно пропустить."
+        ),
+    },
+    {
+        "key": "add_diagnosis_question",
+        "title": "Вопрос «Добавить диагноз?»",
+        "kind": "template_only",
+        "description": (
+            "Если после стационарного окна появляется вопрос «Добавить диагноз?», "
+            "выделите устойчивую область этого окна."
+        ),
+    },
+    {
+        "key": "add_diagnosis_no_button",
+        "title": "Добавить диагноз → «Нет»",
+        "kind": "template_offset",
+        "offset_key": "add_diagnosis_no_button_offset",
+        "description": (
+            "В окне «Добавить диагноз?» выделите кнопку «Нет» и укажите точку клика."
+        ),
+    },
+    {
         "key": "reason_field",
         "title": "Поле «Повод обращения»",
         "kind": "template_offset",
@@ -51,6 +88,16 @@ SETUP_STEPS = [
         "description": (
             "Откройте окно приёма. Выделите область выпадающего списка цели обращения, "
             "затем кликните по фактической точке."
+        ),
+    },
+    {
+        "key": "goal_active_visit_item",
+        "title": "Цель обращения → «Активное посещение»",
+        "kind": "template_offset",
+        "offset_key": "goal_active_visit_item_offset",
+        "description": (
+            "Раскройте список «Цель обращения», выделите пункт «Активное посещение» "
+            "и затем укажите точку клика по нему."
         ),
     },
     {
@@ -209,10 +256,30 @@ SETUP_STEPS = [
     },
     {
         "key": "study_date_label",
-        "title": "Метка даты исследования",
+        "title": "Метка даты исследования (флюорография)",
         "kind": "template_offset",
         "offset_key": "study_date_label_offset",
-        "description": "Выделите подпись/якорь рядом с датой исследования и затем кликните в само поле даты.",
+        "description": "Для флюорографии выделите подпись/якорь рядом с датой исследования и затем кликните в само поле даты.",
+    },
+    {
+        "key": "xray_field_description",
+        "title": "Рентген → поле «Описание»",
+        "kind": "template_offset",
+        "offset_key": "xray_field_description_offset",
+        "description": (
+            "Откройте рентген-протокол, выделите устойчивый якорь поля «Описание» "
+            "и укажите точку ввода текста."
+        ),
+    },
+    {
+        "key": "xray_field_conclusion",
+        "title": "Рентген → поле «Заключение»",
+        "kind": "template_offset",
+        "offset_key": "xray_field_conclusion_offset",
+        "description": (
+            "В том же рентген-протоколе выделите устойчивый якорь поля «Заключение» "
+            "и укажите точку ввода текста."
+        ),
     },
     {
         "key": "sign_password_field",

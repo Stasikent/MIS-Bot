@@ -14,6 +14,7 @@ from project.bot_mode1_current import (
     find_mis_window,
     locate_image_on_screen,
     debug_click_point,
+    _win32_click,
 )
 
 COORDS_PATH = CONFIG_DIR / "coordinates.json"
@@ -61,8 +62,8 @@ FRIENDLY = {
     "inpatient_yes_button": "Стационар — Да",
     "add_diagnosis_question": "Вопрос добавления диагноза",
     "add_diagnosis_no_button": "Добавить диагноз — Нет",
-    "case_result_label": "Исход случая",
-    "case_outcome_label": "Результат случая",
+    "case_result_label": "Результат случая",
+    "case_outcome_label": "Исход заболевания",
     "case_close_current_diagnosis": "Закрыть текущий диагноз",
 }
 
@@ -836,9 +837,11 @@ class TechnicalClickMapWindow(tk.Toplevel):
             self._log(
                 f"[TEST] {self.current['key']}: base={result['base']} final=({x},{y})"
             )
-            debug_click_point(x, y)
+            if not debug_click_point(x, y):
+                raise RuntimeError(f"Точка ({x}, {y}) вне виртуального рабочего стола")
             time.sleep(0.25)
-            pyautogui.click(x, y)
+            if not _win32_click(x, y):
+                raise RuntimeError(f"Win32-клик не выполнен в ({x}, {y})")
         except Exception as e:
             messagebox.showerror("Пробный клик", str(e), parent=self)
 
