@@ -26,3 +26,4 @@ for old, new in replacements:
 
 path.write_text(text, encoding='utf-8')
 print('runtime patch applied successfully')
+# rerun marker: verified Win32 hardening
