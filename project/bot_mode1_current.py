@@ -434,6 +434,8 @@ def _win32_press_key(key: str, presses=1, interval=0.12):
         "enter": 0x0D,
         "space": 0x20,
         "backspace": 0x08,
+        "f2": 0x71,           # VK_F2
+        "esc": 0x1B,          # VK_ESCAPE
     }
 
     vk = vk_map.get(str(key).lower())
@@ -1435,6 +1437,7 @@ def click_template_target(
     label=None,
     clicks=1
 ):
+    current_offset = offset
     if offset_key:
         current_offset = _live_mis_coord(offset_key, list(offset))
         if isinstance(current_offset, (list, tuple)) and len(current_offset) == 2:
@@ -1687,7 +1690,12 @@ def click_config_point(win, point_key, label=None, clicks=1):
         return None
 
     checkpoint()
-    pyautogui.click(x, y, clicks=clicks, interval=0.15)
+    if not _win32_click(x, y, clicks=clicks, interval=0.15):
+        return manual_recover_step(
+            win,
+            f"Не удалось физически нажать точку: {label}",
+            "Выполните этот клик вручную.",
+        )
     checkpoint()
     time.sleep(0.3)
     checkpoint()
