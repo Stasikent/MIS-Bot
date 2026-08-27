@@ -1,5 +1,6 @@
 import time
 import json
+import re
 import ctypes
 from ctypes import wintypes
 from datetime import datetime
@@ -27,6 +28,8 @@ from gui.runtime_click_pick import pick_runtime_point
 from config.loader import load_json
 
 from project.run_controller import RunController
+from services.mode_mapper import get_protocol_template_key, get_protocol_names, load_protocols
+from services.runtime_paths import TEMPLATES_DIR, LOG_DIR, config_path, template_path
 
 from gui.ui_helper import (
     ui_error,
@@ -36,12 +39,8 @@ from gui.ui_helper import (
 )
 
 
-BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
-LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-CONFIG_COORDS_PATH = Path(__file__).resolve().parents[1] / "config" / "coordinates.json"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_COORDS_PATH = config_path("coordinates.json")
 
 pytesseract.pytesseract.tesseract_cmd = COMMON_SETTINGS["tesseract_path"]
 
@@ -61,14 +60,21 @@ WORK_PLUS_FALLBACK_POINT = tuple(MIS_COORDS["work_plus_fallback_point"])
 VISIT_PLUS_OFFSET = tuple(MIS_COORDS.get("visit_plus_offset", (-18, 0)))
 REASON_FIELD_OFFSET = tuple(MIS_COORDS.get("reason_field_offset", (95, 0)))
 GOAL_DROPDOWN_OFFSET = tuple(MIS_COORDS.get("goal_dropdown_offset", (0, 0)))
+GOAL_COMPLEX_ITEM_OFFSET = tuple(MIS_COORDS.get("goal_active_visit_item_offset", (0, 0)))
 HISTORY_MENU_OFFSET = tuple(MIS_COORDS.get("history_menu_offset", (0, 0)))
 HISTORY_FLUORO_ITEM_OFFSET = tuple(MIS_COORDS.get("history_fluoro_item_offset", (0, 0)))
+HISTORY_XRAY_ITEM_OFFSET = tuple(MIS_COORDS.get("history_xray_item_offset", (0, 0)))
 TEMPLATES_ANCHOR_OFFSET = tuple(MIS_COORDS.get("templates_anchor_offset", (0, 0)))
 TEMPLATE_USE_OFFSET = tuple(MIS_COORDS.get("template_use_offset", (0, 0)))
 DIAGNOSIS_DROP_OFFSET = tuple(MIS_COORDS.get("diagnosis_drop_offset", (0, 0)))
 DIAGNOSIS_CODE_OFFSET = tuple(MIS_COORDS.get("diagnosis_code_offset", (0, 0)))
 STUDY_DATE_LABEL_OFFSET = tuple(MIS_COORDS.get("study_date_label_offset", (220, 0)))
 DIAGNOSIS_CANCEL_ITEM_OFFSET = tuple(MIS_COORDS.get("diagnosis_cancel_item_offset", (0, 0)))
+DIAGNOSIS_CLOSE_ITEM_OFFSET = tuple(MIS_COORDS.get("diagnosis_close_item_offset", (0, 0)))
+CASE_RESULT_LABEL_OFFSET = tuple(MIS_COORDS.get("case_result_label_offset", (125, 0)))
+CASE_OUTCOME_LABEL_OFFSET = tuple(MIS_COORDS.get("case_outcome_label_offset", (125, 0)))
+CASE_CLOSE_CURRENT_DIAGNOSIS_OFFSET = tuple(MIS_COORDS.get("case_close_current_diagnosis_offset", (0, 0)))
+EPICRISIS_YES_SIGNED_OFFSET = tuple(MIS_COORDS.get("epicrisis_yes_signed_offset", (0, 0)))
 SERVICE_PRICE_ZERO_OFFSET = tuple(MIS_COORDS.get("service_price_zero_offset", (0, 0)))
 SEARCH_ANCHOR_OFFSET = tuple(MIS_COORDS.get("search_anchor_offset", (0, 0)))
 WORK_PLUS_OFFSET = tuple(MIS_COORDS.get("work_plus_offset", (0, 0)))
@@ -110,8 +116,51 @@ PASTE_CONTEXT_MENU_WAIT = timings.get("paste_context_menu_wait", 0.7)
 
 STOP_ON_CRITICAL = COMMON_SETTINGS["stop_on_critical"]
 
-MODE_TEMPLATES = MIS_SETTINGS["mode_templates"]
-VALID_MODES = set(MODE_TEMPLATES.keys())
+# Старое settings.json оставляем только как fallback для совместимости.
+LEGACY_MODE_TEMPLATES = dict(MIS_SETTINGS.get("mode_templates", {}))
+
+
+
+# v34 naming migration:
+# old v33 key goal_complex_item was renamed to goal_active_visit_item.
+# Runtime uses only the new name; workplace coordinates can be migrated by UI reconfiguration.
+
+def resolve_protocol_template_key(mode: str) -> str | None:
+    """
+    Источник истины для флюорографических протоколов — config/protocols.json.
+    Старый settings.json используется только если protocols.json недоступен
+    или в нём нет указанного режима.
+    """
+    row_key = get_protocol_template_key(mode, section="fluoro")
+    if row_key:
+        return row_key
+
+    return LEGACY_MODE_TEMPLATES.get(mode)
+
+
+def get_valid_modes() -> set[str]:
+    modes = {
+        str(item.get("key", "")).strip()
+        for item in load_protocols("fluoro")
+        if str(item.get("key", "")).strip()
+    }
+
+    # Fallback не ломает старые сохранённые сессии.
+    modes.update(LEGACY_MODE_TEMPLATES.keys())
+    return modes
+
+
+def validate_protocol_mode(mode: str):
+    row_key = resolve_protocol_template_key(mode)
+    if row_key:
+        return row_key
+
+    valid = sorted(get_valid_modes())
+    raise ValueError(
+        f"Неизвестный протокол: {mode}. "
+        f"Доступные режимы: {valid}"
+    )
+
 
 # Включается из GUI
 INTERACTIVE_CLICK_CALIBRATION = False
@@ -148,12 +197,23 @@ print("[BOT CONFIG] WAIT_PROBE_TIMEOUT =", WAIT_PROBE_TIMEOUT)
 print("[BOT CONFIG] BETWEEN_PATIENTS_PAUSE =", BETWEEN_PATIENTS_PAUSE)
 
 
+def _live_mis_templates() -> dict:
+    try:
+        return load_json("templates.json").get("mis", {})
+    except Exception:
+        return MIS_TEMPLATES
+
+
 def template_file(key: str) -> Path:
-    return TEMPLATES_DIR / MIS_TEMPLATES[key]["file"]
+    templates = _live_mis_templates()
+    if key not in templates:
+        raise KeyError(f"Шаблон не зарегистрирован в templates.json: {key}")
+    return template_path(templates[key]["file"])
 
 
 def template_conf(key: str, default: float = 0.82) -> float:
-    return MIS_TEMPLATES[key].get("confidence", default)
+    templates = _live_mis_templates()
+    return templates.get(key, {}).get("confidence", default)
 
 
 def now_str():
@@ -215,6 +275,36 @@ def fail(win, message: str, rel_region=None):
     return "cancel"
 
 
+
+def manual_recover_step(win, message: str, instruction: str | None = None) -> bool:
+    """
+    Универсальное ручное продолжение для любого этапа сценария.
+
+    Если автоматический поиск/клик/проверка не сработали:
+      1) пользователь выполняет текущий шаг вручную в МИС;
+      2) нажимает "Продолжить";
+      3) бот переходит к следующему этапу.
+
+    Возвращает True при продолжении и False при отмене.
+    """
+    log(f"[MANUAL RECOVERY] {message}")
+
+    text = message
+    if instruction:
+        text += f"\n\n{instruction}"
+    text += "\n\nПосле выполнения нажмите «Продолжить»."
+
+    ok = ui_manual_continue(text)
+
+    if not ok:
+        log("[MANUAL RECOVERY] Пользователь отменил сценарий")
+        return False
+
+    log("[MANUAL RECOVERY] Шаг выполнен вручную, продолжаю")
+    checkpoint()
+    return True
+
+
 def find_mis_window():
     settings = load_json("settings.json")
     target_title = settings.get("mis", {}).get("window_title")
@@ -256,195 +346,432 @@ def screenshot_region(win, rel_region):
         return Image.frombytes("RGB", shot.size, shot.rgb)
 
 
+def _virtual_screen_bounds():
+    """
+    Physical bounds of the entire Windows virtual desktop.
+    Supports negative coordinates and any monitor layout.
+    """
+    user32 = ctypes.windll.user32
+
+    SM_XVIRTUALSCREEN = 76
+    SM_YVIRTUALSCREEN = 77
+    SM_CXVIRTUALSCREEN = 78
+    SM_CYVIRTUALSCREEN = 79
+
+    left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+    top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+    height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+
+    return left, top, left + width, top + height
+
+
+def _win32_move_to(x, y):
+    """
+    Move cursor using physical Windows desktop coordinates.
+    This deliberately bypasses pyautogui's primary-monitor assumptions.
+    """
+    user32 = ctypes.windll.user32
+
+    left, top, right, bottom = _virtual_screen_bounds()
+
+    if not (left <= int(x) < right and top <= int(y) < bottom):
+        log(
+            f"[WIN32] Координата вне виртуального рабочего стола: "
+            f"({x},{y}); bounds=({left},{top})-({right},{bottom})"
+        )
+        return False
+
+    ok = user32.SetCursorPos(int(x), int(y))
+    if not ok:
+        log(f"[WIN32] SetCursorPos не сработал для ({x},{y})")
+        return False
+
+    return True
+
+
+def _win32_click(x, y, clicks=1, interval=0.15, button="left"):
+    """
+    Physical-coordinate click for multi-monitor Windows.
+    """
+    user32 = ctypes.windll.user32
+
+    if not _win32_move_to(x, y):
+        return False
+
+    if button == "right":
+        down_flag = 0x0008  # MOUSEEVENTF_RIGHTDOWN
+        up_flag = 0x0010    # MOUSEEVENTF_RIGHTUP
+    else:
+        down_flag = 0x0002  # MOUSEEVENTF_LEFTDOWN
+        up_flag = 0x0004    # MOUSEEVENTF_LEFTUP
+
+    for i in range(max(1, int(clicks))):
+        user32.mouse_event(down_flag, 0, 0, 0, 0)
+        time.sleep(0.03)
+        user32.mouse_event(up_flag, 0, 0, 0, 0)
+
+        if i < clicks - 1:
+            time.sleep(interval)
+
+    return True
+
+
+def _win32_press_key(key: str, presses=1, interval=0.12):
+    """
+    Send physical Windows keyboard events.
+    More reliable for an RDP/MIS window than pyautogui.press on this workstation.
+    """
+    user32 = ctypes.windll.user32
+
+    vk_map = {
+        "pgdn": 0x22,      # VK_NEXT
+        "pagedown": 0x22,
+        "down": 0x28,      # VK_DOWN
+        "up": 0x26,        # VK_UP
+        "left": 0x25,
+        "right": 0x27,
+        "enter": 0x0D,
+        "space": 0x20,
+        "backspace": 0x08,
+    }
+
+    vk = vk_map.get(str(key).lower())
+    if vk is None:
+        raise ValueError(f"Неизвестная Win32-клавиша: {key}")
+
+    KEYEVENTF_KEYUP = 0x0002
+
+    for i in range(max(1, int(presses))):
+        user32.keybd_event(vk, 0, 0, 0)
+        time.sleep(0.035)
+        user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+
+        if i < presses - 1:
+            time.sleep(interval)
+
+    return True
+
+
+def _live_mis_coord(key, fallback=None):
+    """
+    Read the current coordinates.json value immediately before an action.
+    This prevents stale offsets after recalibration.
+    """
+    try:
+        data = load_json("coordinates.json")
+        value = data.get("mis", {}).get(key, fallback)
+        return value
+    except Exception as e:
+        log(f"[COORDS] Не удалось перечитать {key}: {e}")
+        return fallback
+
+
 def debug_click_point(x, y):
     if x is None or y is None:
         log(f"[CLICK] Пропуск: координаты None ({x}, {y})")
         return False
 
-    screen_w, screen_h = pyautogui.size()
+    left, top, right, bottom = _virtual_screen_bounds()
 
-    # защита от углов (fail-safe)
-    if x < 5 or y < 5 or x > screen_w - 5 or y > screen_h - 5:
-        log(f"[CLICK] Пропуск: координаты вне безопасной зоны ({x}, {y})")
+    margin = 1
+    if (
+        int(x) < left + margin
+        or int(y) < top + margin
+        or int(x) >= right - margin
+        or int(y) >= bottom - margin
+    ):
+        log(
+            f"[CLICK] Пропуск: координаты вне виртуального рабочего стола "
+            f"({x}, {y}); bounds=({left},{top})-({right},{bottom})"
+        )
         return False
 
-    try:
-        pyautogui.moveTo(x, y, duration=0.05)
-        return True
-    except pyautogui.FailSafeException:
-        log("[CLICK] FailSafeException пойман — движение отменено")
+    ok = _win32_move_to(int(x), int(y))
+    if ok:
+        log(f"[CLICK] Курсор установлен Win32: ({int(x)}, {int(y)})")
+
+    return ok
+
+
+def sanitize_fio(value: str) -> str:
+    """
+    Нормализация ФИО перед поиском пациента.
+
+    Разрешены только:
+    - кириллица А-Я / а-я / Ё / ё
+    - пробел
+    - дефис
+
+    Латиница, цифры, кавычки, слэши, вертикальные черты
+    и прочие посторонние символы удаляются.
+    """
+    value = str(value or "")
+    value = re.sub(r"[^А-Яа-яЁё\s-]", "", value)
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"\s*-\s*", "-", value)
+    value = re.sub(r"-{2,}", "-", value)
+    return value.strip(" -")
+
+
+def validate_fio(value: str) -> bool:
+    value = sanitize_fio(value)
+    if not value:
         return False
 
+    parts = value.split()
+    if len(parts) < 2:
+        return False
 
-def normalize_date_text(s: str):
-    return s.replace(" ", "").replace(",", ".").replace("-", ".")
+    if any(len(part.strip("-")) < 2 for part in parts):
+        return False
+
+    return True
 
 
-def normalize_date_digits(s: str):
-    return "".join(ch for ch in normalize_date_text(s) if ch.isdigit())
+def normalize_date_text(value: str) -> str:
+    value = str(value or "").strip()
+
+    value = (
+        value
+        .replace(",", ".")
+        .replace("-", ".")
+        .replace("/", ".")
+        .replace("\\", ".")
+        .replace("|", ".")
+        .replace(":", ".")
+        .replace(";", ".")
+    )
+
+    # Частые OCR-подмены буквами похожих цифр.
+    replacements = {
+        "O": "0", "o": "0", "О": "0", "о": "0",
+        "I": "1", "i": "1", "l": "1", "L": "1", "І": "1",
+        "З": "3", "з": "3",
+        "Ч": "4", "ч": "4",
+        "Б": "6", "б": "6",
+        "В": "8", "в": "8",
+    }
+
+    for old, new in replacements.items():
+        value = value.replace(old, new)
+
+    value = re.sub(r"[^0-9.]", "", value)
+    value = re.sub(r"\.{2,}", ".", value)
+    return value.strip(".")
+
+
+def normalize_birth_date(value: str) -> str:
+    """
+    Приводит распознанную дату к DD.MM.YYYY.
+    Некорректная или нереалистичная дата -> пустая строка.
+    """
+    value = normalize_date_text(value)
+    if not value:
+        return ""
+
+    digits = re.sub(r"\D", "", value)
+    candidates = []
+
+    if len(digits) == 8:
+        candidates.append(f"{digits[0:2]}.{digits[2:4]}.{digits[4:8]}")
+
+    elif len(digits) == 6:
+        yy = int(digits[4:6])
+        current_yy = datetime.now().year % 100
+        year = 2000 + yy if yy <= current_yy else 1900 + yy
+        candidates.append(f"{digits[0:2]}.{digits[2:4]}.{year}")
+
+    parts = [p for p in value.split(".") if p]
+    if len(parts) == 3:
+        day, month, year = parts
+
+        if len(day) == 1:
+            day = "0" + day
+        if len(month) == 1:
+            month = "0" + month
+        if len(year) == 2:
+            yy = int(year)
+            current_yy = datetime.now().year % 100
+            year = str(2000 + yy if yy <= current_yy else 1900 + yy)
+
+        candidates.append(f"{day}.{month}.{year}")
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+
+        try:
+            parsed = datetime.strptime(candidate, "%d.%m.%Y")
+        except (ValueError, TypeError):
+            continue
+
+        if parsed.year < 1900:
+            continue
+        if parsed.date() > datetime.now().date():
+            continue
+
+        return parsed.strftime("%d.%m.%Y")
+
+    return ""
+
+
+def normalize_date_digits(value: str) -> str:
+    normalized = normalize_birth_date(value)
+    return normalized.replace(".", "") if normalized else ""
+
 
 def compare_birth_date_candidate(target_date: str, candidate_text: str):
     """
-    Сравнение target даты с OCR-кандидатом.
-    Возвращает:
-    - bool: есть ли совпадение
-    - str: тип совпадения ('exact', 'partial', 'weak', '')
-    """
-    target_digits = normalize_date_digits(target_date)
-    cand_digits = normalize_date_digits(candidate_text)
+    Безопасное сравнение даты рождения.
 
-    if not target_digits or not cand_digits:
+    Для автоматического выбора принимаем только нормализованную
+    календарно корректную дату. Слабое совпадение по части года
+    больше не используется.
+    """
+    target = normalize_birth_date(target_date)
+    candidate = normalize_birth_date(candidate_text)
+
+    if not target or not candidate:
         return False, ""
 
-    if cand_digits == target_digits:
+    if target == candidate:
         return True, "exact"
 
-    if target_digits in cand_digits:
-        return True, "partial"
+    target_digits = target.replace(".", "")
+    candidate_digits = candidate.replace(".", "")
 
-    # слабый fallback:
-    # день+месяц совпали и хвост года похож
-    if len(target_digits) == 8 and len(cand_digits) >= 6:
-        if target_digits[:4] == cand_digits[:4] and target_digits[-2:] == cand_digits[-2:]:
-            return True, "weak"
+    if target_digits in candidate_digits:
+        return True, "partial"
 
     return False, ""
 
 
 def ocr_date_image(img: Image.Image):
     """
-    Двойной OCR-проход для даты:
-    1) быстрый проход — оригинал + мягкие бинаризации
-    2) усиленный проход — контраст + resize + более жесткие бинаризации
+    Усиленный OCR даты рождения.
 
-    Возвращает лучшую найденную строку даты или пустую строку.
+    Использует несколько масштабов, порогов и PSM.
+    Возвращает только календарно корректную DD.MM.YYYY.
+    Побеждает вариант, полученный независимыми OCR-проходами чаще всего.
     """
     checkpoint()
 
     gray = img.convert("L")
+    found = []
 
-    def cleanup_text(text: str) -> str:
-        text = text.replace(",", ".").replace("-", ".").replace("/", ".")
-        text = "".join(ch for ch in text if ch.isdigit() or ch == ".")
-        while ".." in text:
-            text = text.replace("..", ".")
-        return text.strip(" .")
+    def add_candidate(raw: str, source: str):
+        if not raw:
+            return
 
-    def score_date_candidate(text: str) -> int:
-        if not text:
-            return 0
+        normalized = normalize_birth_date(raw)
+        log(f"[DOB OCR] {source}: raw={raw!r} -> normalized={normalized!r}")
 
-        digits = "".join(ch for ch in text if ch.isdigit())
-        dots = text.count(".")
-        score = 0
+        if not normalized:
+            return
 
-        if len(digits) == 8:
+        score = 100
+        cleaned = normalize_date_text(raw)
+
+        if re.fullmatch(r"\d{2}\.\d{2}\.\d{4}", cleaned):
             score += 100
 
-        if dots == 2:
-            score += 40
-        elif dots == 1:
-            score += 10
+        raw_digits = re.sub(r"\D", "", raw)
+        if len(raw_digits) == 8:
+            score += 50
 
-        if 8 <= len(text) <= 10:
-            score += 20
+        found.append((normalized, score, source))
 
-        parts = text.split(".")
-        if len(parts) == 3:
-            d, m, y = parts
-            if len(d) in (1, 2) and len(m) in (1, 2) and len(y) in (2, 4):
-                score += 60
-
-        return score
-
-    def normalize_candidate(text: str) -> str:
-        text = cleanup_text(text)
-        if not text:
-            return ""
-
-        parts = [p for p in text.split(".") if p]
-        if len(parts) != 3:
-            return text
-
-        d, m, y = parts
-
-        if len(d) == 1:
-            d = "0" + d
-        if len(m) == 1:
-            m = "0" + m
-        if len(y) == 2:
-            y = "20" + y
-
-        return f"{d}.{m}.{y}"
-
-    def run_ocr_variants(images, psm_list):
-        found = []
-
-        for prepared in images:
-            checkpoint()
-            for psm in psm_list:
-                try:
-                    raw = pytesseract.image_to_string(
-                        prepared,
-                        lang="eng",
-                        config=f"--psm {psm} -c tessedit_char_whitelist=0123456789./,-",
-                        timeout=2,
-                    )
-                except pytesseract.TesseractError as e:
-                    log(f"OCR ошибка Tesseract: {e}")
-                    continue
-                except RuntimeError as e:
-                    log(f"OCR timeout/runtime error: {e}")
-                    continue
-                except Exception as e:
-                    log(f"OCR непредвиденная ошибка: {e}")
-                    continue
-
-                cleaned = cleanup_text(raw)
-                normalized = normalize_candidate(cleaned)
-                score = score_date_candidate(normalized)
-
-                if normalized:
-                    found.append((normalized, score, psm))
-
-        return found
-
-    # --- ПРОХОД 1: быстрый ---
-    pass1_images = [gray]
-
-    for threshold in (160, 175, 190):
-        bw = gray.point(lambda x, t=threshold: 0 if x < t else 255, "1")
-        pass1_images.append(bw.convert("L"))
-
-    pass1_results = run_ocr_variants(pass1_images, psm_list=(7, 13))
-    if pass1_results:
-        best1 = max(pass1_results, key=lambda x: x[1])
-        log(f"OCR pass1 best: text={best1[0]!r}, score={best1[1]}, psm={best1[2]}")
-        if best1[1] >= 140:
-            return best1[0]
-
-    # --- ПРОХОД 2: усиленный ---
-    big = gray.resize((gray.width * 2, gray.height * 2), Image.Resampling.LANCZOS)
-
-    stretched = big.point(
-        lambda x: 0 if x < 100 else (255 if x > 200 else int((x - 100) * 255 / 100))
+    big2 = gray.resize(
+        (gray.width * 2, gray.height * 2),
+        Image.Resampling.LANCZOS,
+    )
+    big3 = gray.resize(
+        (gray.width * 3, gray.height * 3),
+        Image.Resampling.LANCZOS,
     )
 
-    pass2_images = [big, stretched]
+    images = [
+        ("gray", gray),
+        ("x2", big2),
+        ("x3", big3),
+    ]
 
-    for threshold in (145, 160, 175, 200):
-        bw = stretched.point(lambda x, t=threshold: 0 if x < t else 255, "1")
-        pass2_images.append(bw.convert("L"))
+    for threshold in (120, 140, 155, 170, 185, 200, 215):
+        bw = big3.point(
+            lambda x, t=threshold: 0 if x < t else 255,
+            "1",
+        ).convert("L")
+        images.append((f"threshold_{threshold}", bw))
 
-    pass2_results = run_ocr_variants(pass2_images, psm_list=(7, 13, 6))
+    # Для даты цифры и привычные разделители.
+    configs = (
+        (7, "0123456789./,-"),
+        (8, "0123456789./,-"),
+        (11, "0123456789./,-"),
+        (13, "0123456789./,-"),
+    )
 
-    all_results = pass1_results + pass2_results
-    if not all_results:
+    for image_name, prepared in images:
+        checkpoint()
+
+        for psm, whitelist in configs:
+            try:
+                raw = pytesseract.image_to_string(
+                    prepared,
+                    lang="eng",
+                    config=(
+                        f"--psm {psm} "
+                        f"-c tessedit_char_whitelist={whitelist}"
+                    ),
+                    timeout=2,
+                )
+            except pytesseract.TesseractError as e:
+                log(f"[DOB OCR] Tesseract error: {e}")
+                continue
+            except RuntimeError as e:
+                log(f"[DOB OCR] timeout: {e}")
+                continue
+            except Exception as e:
+                log(f"[DOB OCR] unexpected: {e}")
+                continue
+
+            add_candidate(raw, f"{image_name}/psm{psm}")
+
+    if not found:
+        log("[DOB OCR] Корректная дата не найдена")
         return ""
 
-    best = max(all_results, key=lambda x: x[1])
-    log(f"OCR final best: text={best[0]!r}, score={best[1]}, psm={best[2]}")
-    return best[0]
+    counts = {}
+
+    for date_value, score, source in found:
+        info = counts.setdefault(
+            date_value,
+            {"count": 0, "score": 0, "sources": []},
+        )
+        info["count"] += 1
+        info["score"] += score
+        info["sources"].append(source)
+
+    ranked = sorted(
+        counts.items(),
+        key=lambda item: (item[1]["count"], item[1]["score"]),
+        reverse=True,
+    )
+
+    best_date, best_info = ranked[0]
+
+    log(
+        f"[DOB OCR] BEST: {best_date} "
+        f"| count={best_info['count']} "
+        f"| score={best_info['score']} "
+        f"| sources={best_info['sources']}"
+    )
+
+    return best_date
+
 
 def wait_manual_patient_selection(wait_seconds=MANUAL_PATIENT_SELECT_WAIT):
     log(
@@ -646,18 +973,15 @@ def fill_xray_field_by_label(
 
 
 def fill_xray_protocol(win, task):
-    log("XRAY: заполнение протокола")
+    """
+    XRAY protocol after patient-specific template is loaded.
 
-    ok = fill_xray_field_by_label(
-        win=win,
-        template_key="xray_field_study_number",
-        text="-",
-        offset=XRAY_FIELD_STUDY_NUMBER_OFFSET,
-        offset_key="xray_field_study_number_offset",
-        label="Номер исследования",
-    )
-    if not ok:
-        return False
+    There is no separate "Номер исследования" step in this route.
+    Fill only:
+      1. Описание
+      2. Заключение
+    """
+    log("XRAY: заполнение протокола — только Описание и Заключение")
 
     ok = fill_xray_field_by_label(
         win=win,
@@ -665,7 +989,7 @@ def fill_xray_protocol(win, task):
         text=task.description,
         offset=XRAY_FIELD_DESCRIPTION_OFFSET,
         offset_key="xray_field_description_offset",
-        label="Описание результатов",
+        label="Описание",
     )
     if not ok:
         return False
@@ -681,8 +1005,28 @@ def fill_xray_protocol(win, task):
     if not ok:
         return False
 
-    log("XRAY: протокол заполнен")
+    log("XRAY: Описание и Заключение заполнены")
     return True
+
+
+def save_and_sign_xray_protocol(win):
+    """
+    XRAY protocol has no study-date field at this stage.
+    Save/sign directly: F2 -> Space -> password dialog if present.
+    """
+    log("XRAY: сохранение и подпись без поиска поля даты исследования")
+
+    pyautogui.press("f2")
+    time.sleep(0.8)
+    checkpoint()
+
+    pyautogui.press("space")
+    time.sleep(0.8)
+    checkpoint()
+
+    handle_sign_password_if_needed(win)
+    return True
+
 
 
 def wait_for_template_strict(
@@ -741,21 +1085,101 @@ def _write_coords_json(data):
 def choose_xray_service(win):
     log("Выбор услуги: Рентгенографическое исследование")
 
-    clicked = click_template_target(
-        win,
+    # Ищем строку услуги отдельно, чтобы после медленной загрузки
+    # не переходить сразу в ручной режим.
+    loc = _wait_template_with_delayed_retry(
         "xray_service_item",
-        offset=XRAY_SERVICE_ITEM_OFFSET,
-        offset_key="xray_service_item_offset",
-        timeout=8,
+        first_checks=3,
+        first_pause=0.8,
+        first_probe_timeout=1.2,
+        retry_delay=5.0,
+        second_checks=5,
+        second_pause=1.0,
+        second_probe_timeout=1.2,
         label="xray_service_item",
-        clicks=1,
     )
-    if not clicked:
-        return False
 
-    time.sleep(0.6)
+    if not loc:
+        return manual_recover_step(
+            win,
+            "Не найден элемент xray_service_item после двух попыток.",
+            "Выберите «Рентгенографическое исследование» вручную и нажмите «Продолжить».",
+        )
+
+    live_offset = _live_mis_coord(
+        "xray_service_item_offset",
+        list(XRAY_SERVICE_ITEM_OFFSET),
+    )
+    if not isinstance(live_offset, (list, tuple)) or len(live_offset) != 2:
+        live_offset = list(XRAY_SERVICE_ITEM_OFFSET)
+
+    final_x = int(loc.x) + int(live_offset[0])
+    final_y = int(loc.y) + int(live_offset[1])
+
+    log(
+        f"xray_service_item: base=({loc.x},{loc.y}) "
+        f"offset=({int(live_offset[0])},{int(live_offset[1])}) "
+        f"final=({final_x},{final_y})"
+    )
+
+    if not _win32_click(final_x, final_y):
+        return manual_recover_step(
+            win,
+            "Не удалось нажать найденное «Рентгенографическое исследование».",
+            "Выберите его вручную и нажмите «Продолжить».",
+        )
+
+    time.sleep(0.8)
     checkpoint()
     return True
+
+
+
+def open_templates_selector(win):
+    """
+    Explicitly performs:
+      Шаблоны -> Выбрать
+
+    XRAY flow previously skipped this and jumped directly to
+    template_owner_dropdown.
+    """
+    log("Открываю 'Шаблоны'")
+
+    ok = adaptive_click_template_target(
+        win=win,
+        template_key="templates_anchor",
+        offset=TEMPLATES_ANCHOR_OFFSET,
+        offset_key="templates_anchor_offset",
+        timeout=8,
+        label="templates_anchor",
+        clicks=1,
+        expected_template="template_use",
+        expected_checks=WAIT_CHECKS,
+        expected_pause=WAIT_PAUSE,
+        expected_probe_timeout=WAIT_PROBE_TIMEOUT,
+        post_click_sleep=0.6,
+    )
+    if not ok:
+        return False
+
+    log("Нажимаю 'Выбрать'")
+
+    ok = click_template_target(
+        win,
+        "template_use",
+        offset=TEMPLATE_USE_OFFSET,
+        offset_key="template_use_offset",
+        timeout=6,
+        label="template_use",
+        clicks=1,
+    )
+    if not ok:
+        return False
+
+    time.sleep(0.8)
+    checkpoint()
+    return True
+
 
 
 def choose_only_my_templates(win):
@@ -823,6 +1247,13 @@ def clear_template_diagnosis_if_exists(win):
 
 
 def choose_xray_template(win, task):
+    """
+    Select the patient-specific XRAY template row.
+
+    The template itself is NOT a control-only detector:
+    if task.template_key points to its PNG, that PNG is a clickable row.
+    We click its detected centre directly (no TEMPLATE_USE_OFFSET).
+    """
     template_key = getattr(task, "template_key", "") or ""
     template_name = getattr(task, "template_name", "") or template_key
 
@@ -830,33 +1261,52 @@ def choose_xray_template(win, task):
         action = fail(
             win,
             f"Для исследования '{task.study_name}' не найден template_key.\n"
-            f"Выбери шаблон вручную и нажми 'Продолжить'."
+            f"Выбери шаблон вручную и нажми 'Продолжить'.",
         )
         return action == "continue"
 
     log(f"Выбор рентген-шаблона: {template_name} ({template_key})")
 
+    # Optional per-template offset if such a key was configured;
+    # otherwise the action point is the centre of the found row PNG.
+    dynamic_offset_key = f"{template_key}_offset"
+    dynamic_offset = _live_mis_coord(dynamic_offset_key, [0, 0])
+    if not isinstance(dynamic_offset, (list, tuple)) or len(dynamic_offset) != 2:
+        dynamic_offset = [0, 0]
+
     clicked = click_template_target(
         win,
         template_key,
-        offset=TEMPLATE_USE_OFFSET,
-        offset_key="template_use_offset",
+        offset=(int(dynamic_offset[0]), int(dynamic_offset[1])),
+        offset_key=dynamic_offset_key,
         timeout=8,
         label=f"xray_template:{template_key}",
-        clicks=1,
+        clicks=2,
     )
 
     if not clicked:
         action = fail(
             win,
             f"Не удалось выбрать шаблон: {template_name} ({template_key}).\n"
-            f"Выбери шаблон вручную и нажми 'Продолжить'."
+            f"Выбери шаблон вручную и нажми 'Продолжить'.",
         )
         return action == "continue"
 
+    # Keep the same post-selection behavior used by the fluoro template flow.
+    time.sleep(0.45)
+    checkpoint()
+
+    log("После выбора рентген-шаблона: Space -> пауза -> Space")
+    _win32_press_key("space")
+    time.sleep(0.8)
+    checkpoint()
+    _win32_press_key("space")
     time.sleep(TEMPLATE_LOAD_WAIT)
     checkpoint()
+
     return True
+
+
 
 def _save_template_offset(offset_key: str, dx: int, dy: int):
     data = _read_coords_json()
@@ -870,6 +1320,7 @@ def _save_template_offset(offset_key: str, dx: int, dy: int):
         "visit_plus_offset": "VISIT_PLUS_OFFSET",
         "reason_field_offset": "REASON_FIELD_OFFSET",
         "goal_dropdown_offset": "GOAL_DROPDOWN_OFFSET",
+        "goal_active_visit_item_offset": "GOAL_COMPLEX_ITEM_OFFSET",
         "history_menu_offset": "HISTORY_MENU_OFFSET",
         "history_fluoro_item_offset": "HISTORY_FLUORO_ITEM_OFFSET",
         "templates_anchor_offset": "TEMPLATES_ANCHOR_OFFSET",
@@ -889,6 +1340,11 @@ def _save_template_offset(offset_key: str, dx: int, dy: int):
         "xray_template_row_offset": "XRAY_TEMPLATE_ROW_OFFSET",
         "inpatient_yes_button_offset": "INPATIENT_YES_BUTTON_OFFSET",
         "add_diagnosis_no_button_offset": "ADD_DIAGNOSIS_NO_BUTTON_OFFSET",
+        "diagnosis_close_item_offset": "DIAGNOSIS_CLOSE_ITEM_OFFSET",
+        "case_result_label_offset": "CASE_RESULT_LABEL_OFFSET",
+        "case_outcome_label_offset": "CASE_OUTCOME_LABEL_OFFSET",
+        "case_close_current_diagnosis_offset": "CASE_CLOSE_CURRENT_DIAGNOSIS_OFFSET",
+        "epicrisis_yes_signed_offset": "EPICRISIS_YES_SIGNED_OFFSET",
     }
     if offset_key in globals_map:
         globals()[globals_map[offset_key]] = (dx, dy)
@@ -979,6 +1435,11 @@ def click_template_target(
     label=None,
     clicks=1
 ):
+    if offset_key:
+        current_offset = _live_mis_coord(offset_key, list(offset))
+        if isinstance(current_offset, (list, tuple)) and len(current_offset) == 2:
+            offset = (int(current_offset[0]), int(current_offset[1]))
+
     loc, final_x, final_y = get_template_click_point(
         template_key=template_key,
         offset=offset,
@@ -987,14 +1448,20 @@ def click_template_target(
     )
 
     if not loc:
-        fail(win, f"Не найден шаблон: {template_key}")
+        if manual_recover_step(
+            win,
+            f"Не найден элемент: {label or template_key}",
+            "Выполните этот шаг вручную и оставьте МИС в состоянии, "
+            "в котором бот должен перейти к следующему действию.",
+        ):
+            return (0, 0)
         return None
 
     label = label or template_key
 
     log(
         f"Клик по {label}: "
-        f"base=({loc.x},{loc.y}) offset=({offset[0]},{offset[1]}) final=({final_x},{final_y})"
+        f"base=({loc.x},{loc.y}) offset=({current_offset[0]},{current_offset[1]}) final=({final_x},{final_y})"
     )
 
     if offset_key:
@@ -1012,11 +1479,21 @@ def click_template_target(
             return final_x, final_y
 
     if not debug_click_point(final_x, final_y):
-        fail(win, f"Небезопасная точка клика для {label}: ({final_x}, {final_y})")
+        if manual_recover_step(
+            win,
+            f"Не удалось автоматически нажать: {label}",
+            "Нажмите нужный элемент вручную.",
+        ):
+            return (0, 0)
         return None
 
     checkpoint()
-    pyautogui.click(final_x, final_y, clicks=clicks, interval=0.15)
+    if not _win32_click(final_x, final_y, clicks=clicks, interval=0.15):
+        return manual_recover_step(
+            win,
+            f"Не удалось физически нажать: {label}",
+            "Нажмите нужный элемент вручную.",
+        )
     checkpoint()
     time.sleep(0.3)
     checkpoint()
@@ -1043,18 +1520,25 @@ def adaptive_click_template_target(
     while True:
         checkpoint()
 
+        current_offset = offset
+        if offset_key:
+            live_value = _live_mis_coord(offset_key, list(offset))
+            if isinstance(live_value, (list, tuple)) and len(live_value) == 2:
+                current_offset = (int(live_value[0]), int(live_value[1]))
+
         loc, final_x, final_y = get_template_click_point(
             template_key=template_key,
-            offset=offset,
+            offset=current_offset,
             confidence=confidence,
             timeout=timeout,
         )
 
         if not loc:
-            action = fail(win, f"Не найден шаблон: {template_key}")
-            if action == "continue":
-                return True
-            return False
+            return manual_recover_step(
+                win,
+                f"Не найден элемент: {label}",
+                "Выполните текущий шаг вручную и подготовьте экран к следующему этапу.",
+            )
 
         log(
             f"Адаптивный клик по {label}: "
@@ -1076,13 +1560,19 @@ def adaptive_click_template_target(
                 return True
 
         if not debug_click_point(final_x, final_y):
-            action = fail(win, f"Небезопасная точка клика для {label}: ({final_x}, {final_y})")
-            if action == "continue":
-                return True
-            return False
+            return manual_recover_step(
+                win,
+                f"Не удалось автоматически нажать: {label}",
+                "Нажмите нужный элемент вручную.",
+            )
 
         checkpoint()
-        pyautogui.click(final_x, final_y, clicks=clicks, interval=0.15)
+        if not _win32_click(final_x, final_y, clicks=clicks, interval=0.15):
+            return manual_recover_step(
+                win,
+                f"Не удалось физически нажать: {label}",
+                "Нажмите нужный элемент вручную.",
+            )
         checkpoint()
 
         if post_click_sleep:
@@ -1134,7 +1624,9 @@ def adaptive_click_template_target(
                     continue
 
                 checkpoint()
-                pyautogui.click(picked_x, picked_y, clicks=clicks, interval=0.15)
+                if not _win32_click(picked_x, picked_y, clicks=clicks, interval=0.15):
+                    log(f"{label}: Win32-клик по новой точке не выполнен")
+                    continue
                 checkpoint()
 
                 if post_click_sleep:
@@ -1186,7 +1678,12 @@ def click_config_point(win, point_key, label=None, clicks=1):
         return x, y
 
     if not debug_click_point(x, y):
-        fail(win, f"Небезопасная точка: {label} ({x},{y})")
+        if manual_recover_step(
+            win,
+            f"Не удалось автоматически нажать точку: {label}",
+            "Выполните этот клик вручную.",
+        ):
+            return (0, 0)
         return None
 
     checkpoint()
@@ -1301,85 +1798,146 @@ def set_clipboard_text(text: str):
 
 
 def paste_text_via_context_menu(field_x: int, field_y: int, text: str):
+    """
+    Patient FIO paste:
+      focus field -> clipboard -> RMB -> template 'Вставить' -> click.
+
+    The old Right/Left key stabilization is NOT restored.
+    """
     log(f"Кладу ФИО в буфер: {text}")
     set_clipboard_text(text)
-    time.sleep(0.25)
+    time.sleep(0.2)
+    checkpoint()
+
+    # Reassert focus and clear previous text before RMB.
+    if not _win32_click(field_x, field_y):
+        raise RuntimeError(
+            f"Не удалось установить фокус поля поиска ({field_x},{field_y})"
+        )
+
+    time.sleep(0.12)
+    checkpoint()
+
+    pyautogui.hotkey("ctrl", "a")
+    time.sleep(0.08)
+    checkpoint()
+
+    _win32_press_key("backspace")
+    time.sleep(0.12)
     checkpoint()
 
     log("Открываю контекстное меню поля поиска")
-    pyautogui.rightClick(field_x, field_y)
+    if not _win32_click(field_x, field_y, button="right"):
+        raise RuntimeError(
+            f"Не удалось открыть контекстное меню в ({field_x},{field_y})"
+        )
+
     time.sleep(PASTE_CONTEXT_MENU_WAIT)
     checkpoint()
 
     loc = wait_for_template_strict(
         "paste_context_item",
-        checks=3,
-        pause=0.4,
-        probe_timeout=1.2
+        checks=4,
+        pause=0.35,
+        probe_timeout=1.2,
     )
     checkpoint()
+
     if not loc:
         raise RuntimeError("Не найден пункт 'Вставить' в контекстном меню")
 
-    pyautogui.click(loc.x, loc.y)
-    checkpoint()
-    time.sleep(0.8)
+    if not _win32_click(loc.x, loc.y):
+        raise RuntimeError(
+            f"Не удалось нажать пункт Вставить в ({loc.x},{loc.y})"
+        )
+
+    time.sleep(0.55)
     checkpoint()
 
+
+
 def search_patient(win, fio: str):
+    original_fio = str(fio or "")
+    fio = sanitize_fio(original_fio)
+
+    log(f"ФИО перед поиском: raw={original_fio!r} -> normalized={fio!r}")
+
+    if not validate_fio(fio):
+        return manual_recover_step(
+            win,
+            f"Не удалось подготовить корректное ФИО автоматически.\n"
+            f"Исходное: {original_fio}\n"
+            f"После очистки: {fio}",
+            "Введите ФИО пациента в поле поиска вручную.",
+        )
+
     log("Поиск якоря поиска пациента")
     anchor = locate_image_on_screen("search_anchor", timeout=8)
     if not anchor:
-        fail(win, "Не найден search_anchor")
-        return False
+        return manual_recover_step(
+            win,
+            "Не найдено поле поиска пациента.",
+            f"Введите ФИО вручную: {fio}",
+        )
 
-    anchor_x = anchor.x + SEARCH_ANCHOR_OFFSET[0]
-    anchor_y = anchor.y + SEARCH_ANCHOR_OFFSET[1]
+    live_anchor_offset = _live_mis_coord(
+        "search_anchor_offset",
+        list(SEARCH_ANCHOR_OFFSET),
+    )
+    if not isinstance(live_anchor_offset, (list, tuple)) or len(live_anchor_offset) != 2:
+        live_anchor_offset = list(SEARCH_ANCHOR_OFFSET)
 
-    field_x = anchor_x - SEARCH_ANCHOR_X_OFFSET
+    live_x_offset = _live_mis_coord(
+        "search_anchor_x_offset",
+        SEARCH_ANCHOR_X_OFFSET,
+    )
+
+    anchor_x = anchor.x + int(live_anchor_offset[0])
+    anchor_y = anchor.y + int(live_anchor_offset[1])
+
+    field_x = anchor_x - int(live_x_offset)
     field_y = anchor_y
 
     log(
         f"Клик в поле поиска: "
-        f"anchor_base=({anchor.x},{anchor.y}) anchor_offset=({SEARCH_ANCHOR_OFFSET[0]},{SEARCH_ANCHOR_OFFSET[1]}) "
+        f"anchor_base=({anchor.x},{anchor.y}) "
+        f"anchor_offset=({int(live_anchor_offset[0])},{int(live_anchor_offset[1])}) "
+        f"x_offset={int(live_x_offset)} "
         f"final_field=({field_x},{field_y})"
     )
-    ok = debug_click_point(field_x, field_y)
-    if not ok:
-        return False
+
+    if not debug_click_point(field_x, field_y):
+        return manual_recover_step(
+            win,
+            "Не удалось автоматически установить курсор в поле поиска пациента.",
+            f"Введите ФИО вручную: {fio}",
+        )
+
     checkpoint()
     time.sleep(0.25)
-    checkpoint()
-    pyautogui.click(field_x, field_y)
+
+    if not _win32_click(field_x, field_y):
+        return manual_recover_step(
+            win,
+            "Не удалось физически нажать поле поиска пациента.",
+            f"Введите ФИО вручную: {fio}",
+        )
+
     checkpoint()
     time.sleep(0.25)
-    checkpoint()
 
-    log("Очищаю поле поиска")
-    pyautogui.hotkey("ctrl", "a")
-    time.sleep(0.15)
-    checkpoint()
-    pyautogui.press("backspace")
-    time.sleep(0.25)
-    checkpoint()
-
-    log("Стабилизирую фокус поля")
-    pyautogui.press("right")
-    time.sleep(0.1)
-    checkpoint()
-    pyautogui.press("left")
-    time.sleep(0.1)
-    checkpoint()
-
-        
     try:
         paste_text_via_context_menu(field_x, field_y, fio)
     except Exception as e:
-        fail(win, f"Не удалось вставить ФИО: {e}")
-        return False
+        return manual_recover_step(
+            win,
+            f"Не удалось автоматически вставить ФИО: {e}",
+            f"Введите ФИО вручную: {fio}",
+        )
 
     log(f"ФИО отправлено в поле поиска: {fio}")
     return True
+
 
 def find_patient_by_birth_date_and_click(win, birth_date: str, max_rows=MAX_PATIENT_ROWS):
     log(f"[V2 OCRx2] Поиск пациента по дате рождения: {birth_date}")
@@ -1443,23 +2001,19 @@ def find_patient_by_birth_date_and_click(win, birth_date: str, max_rows=MAX_PATI
     elif weak_matches:
         # слабые совпадения опаснее — не кликаем молча
         log("[V2 OCRx2] Найдены только слабые совпадения")
-        action = fail(
+        return manual_recover_step(
             win,
-            f"Дата рождения {birth_date} распознана неуверенно. "
-            f"Рекомендуется выбрать пациента вручную.",
-            rel_region=DOB_REGION
+            f"Дата рождения {birth_date} распознана неуверенно.",
+            "Выберите нужную строку пациента вручную.",
         )
-        if action == "continue":
-            wait_manual_patient_selection(MANUAL_PATIENT_SELECT_WAIT)
-            return True
-        return False
 
     if not chosen:
         log("[V2 OCRx2] Совпадений не найдено")
-        action = fail(win, f"Пациент с датой рождения {birth_date} не найден", rel_region=DOB_REGION)
-        if action == "continue":
-            log("[V2 OCRx2] Переход в ручной выбор пациента")
-            wait_manual_patient_selection(MANUAL_PATIENT_SELECT_WAIT)
+        if manual_recover_step(
+            win,
+            f"Пациент с датой рождения {birth_date} не найден автоматически.",
+            "Выберите нужную строку пациента вручную.",
+        ):
             return True
         return False
 
@@ -1521,117 +2075,279 @@ def open_visit(win, study_date=None):
     return True
 
 
-def handle_post_visit_plus_flow(win):
-    log("Подтверждаю стартовую дату через Enter")
-    pyautogui.press("enter")
-    time.sleep(1.0)
-    checkpoint()
-
-    log("Проверяю, появилось ли окно направления")
-    loc = wait_for_template_strict(
-        "without_referral",
-        checks=WAIT_CHECKS,
-        pause=WAIT_PAUSE,
-        probe_timeout=min(WAIT_PROBE_TIMEOUT, WITHOUT_REFERRAL_TIMEOUT)
-    )
-    checkpoint()
-
-    if loc:
-        log("Найдено окно направления -> выбираю 'Прием без направления'")
-        pyautogui.click(loc.x, loc.y)
-        checkpoint()
-        time.sleep(1.0)
-        checkpoint()
-    else:
-        log("Окно направления не появилось")
-
-    log("Жду открытия окна приема (reason_field)")
-    ready = wait_for_template_strict(
+def _wait_reason_field_after_visit(win, label="Окно приёма"):
+    """
+    Heavy MIS point: wait for reason_field with three delayed retries.
+    """
+    ready = _wait_template_with_delayed_retry(
         "reason_field",
-        checks=WAIT_CHECKS,
-        pause=WAIT_PAUSE,
-        probe_timeout=WAIT_PROBE_TIMEOUT
+        first_checks=2,
+        first_pause=0.8,
+        first_probe_timeout=WAIT_PROBE_TIMEOUT,
+        retry_delay=5.0,
+        retry_rounds=3,
+        second_checks=2,
+        second_pause=0.8,
+        second_probe_timeout=WAIT_PROBE_TIMEOUT,
+        label=label,
     )
     checkpoint()
+    return bool(ready)
 
-    if not ready:
-        fail(win, "Окно приема не открылось (reason_field не найден)")
-        return False
 
-    log("Окно приема открыто")
-    return True
+def _locate_optional_template(template_key: str, timeout=1.5):
+    """Optional detector: missing/unconfigured PNG must never crash the flow."""
+    try:
+        return locate_image_on_screen(template_key, timeout=timeout)
+    except (FileNotFoundError, KeyError) as e:
+        log(f"[OPTIONAL TEMPLATE] {template_key}: шаблон не настроен; пропускаю ({e})")
+        return None
+    except Exception as e:
+        log(f"[OPTIONAL TEMPLATE] {template_key}: ошибка проверки; пропускаю ({e})")
+        return None
+
+
+def _find_visit_branch_once():
+    """
+    Detect which screen appeared after confirming the start date.
+
+    Priority:
+      inpatient_question -> without_referral -> reason_field
+
+    Missing optional inpatient PNG must not crash normal workplaces.
+    """
+    inpatient = _locate_optional_template("inpatient_question", timeout=0.8)
+    if inpatient:
+        return "inpatient", inpatient
+
+    try:
+        without_ref = locate_image_on_screen("without_referral", timeout=0.8)
+    except Exception:
+        without_ref = None
+    if without_ref:
+        return "without_referral", without_ref
+
+    try:
+        reason = locate_image_on_screen("reason_field", timeout=0.8)
+    except Exception:
+        reason = None
+    if reason:
+        return "ready", reason
+
+    return None, None
+
+
+def _wait_visit_branch_after_enter():
+    """
+    Heavy MIS point after Enter:
+    immediate check + three repeats with 5-second gaps.
+
+    Returns:
+      ("inpatient" | "without_referral" | "ready", location)
+      or (None, None)
+    """
+    for round_no in range(0, 4):
+        checkpoint()
+
+        branch, loc = _find_visit_branch_once()
+        if branch:
+            log(
+                f"[VISIT] Определена ветка после Enter: {branch} "
+                f"(проверка {round_no + 1}/4)"
+            )
+            return branch, loc
+
+        if round_no < 3:
+            log(
+                f"[VISIT] МИС ещё не показала стационар/направление/Повод. "
+                f"Жду 5 секунд ({round_no + 1}/3)"
+            )
+            waited = 0.0
+            while waited < 5.0:
+                checkpoint()
+                step = min(0.25, 5.0 - waited)
+                time.sleep(step)
+                waited += step
+
+    log("[VISIT] После Enter не удалось определить ветку открытия приёма")
+    return None, None
+
+
+def handle_visit_opening_flow(win):
+    """
+    Unified opening of a NEW visit for FLUORO and XRAY.
+
+    Correct order:
+      visit_plus -> enter date [done by open_visit()]
+      -> Enter
+      -> detect one of:
+           1) inpatient_question
+           2) without_referral
+           3) reason_field
+
+    Returns:
+      "inpatient" -> inpatient branch was processed
+      "normal"    -> ordinary visit is ready
+      False       -> failed/manual recovery declined
+    """
+    log("[VISIT] Подтверждаю стартовую дату через Enter")
+    _win32_press_key("enter")
+    checkpoint()
+
+    branch, _ = _wait_visit_branch_after_enter()
+
+    if branch is None:
+        recovered = manual_recover_step(
+            win,
+            "Не удалось распознать результат открытия приёма.",
+            "Подготовьте окно приёма вручную до поля «Повод обращения».",
+        )
+        return "normal" if recovered else False
+
+    # --------------------------------------------------------------
+    # Inpatient branch.
+    # --------------------------------------------------------------
+    if branch == "inpatient":
+        log("[VISIT] Пациент в стационаре -> нажимаю «Да»")
+
+        clicked = click_template_target(
+            win,
+            "inpatient_yes_button",
+            offset=INPATIENT_YES_BUTTON_OFFSET,
+            offset_key="inpatient_yes_button_offset",
+            timeout=6,
+            label="inpatient_yes_button",
+            clicks=1,
+        )
+        if not clicked:
+            recovered = manual_recover_step(
+                win,
+                "Не удалось нажать «Да» в окне стационарного пациента.",
+                "Нажмите «Да» вручную и оставьте сценарий на следующем окне.",
+            )
+            if not recovered:
+                return False
+
+        checkpoint()
+        time.sleep(0.5)
+
+        # The second popup is optional. Give MIS time to show it.
+        add_diag = _wait_template_with_delayed_retry(
+            "add_diagnosis_question",
+            first_checks=1,
+            first_pause=0.2,
+            first_probe_timeout=0.8,
+            retry_delay=5.0,
+            retry_rounds=1,
+            second_checks=1,
+            second_pause=0.2,
+            second_probe_timeout=0.8,
+            label="Добавить диагноз?",
+        )
+
+        if add_diag:
+            log("[VISIT] Найдено «Добавить диагноз?» -> нажимаю «Нет»")
+            clicked2 = click_template_target(
+                win,
+                "add_diagnosis_no_button",
+                offset=ADD_DIAGNOSIS_NO_BUTTON_OFFSET,
+                offset_key="add_diagnosis_no_button_offset",
+                timeout=6,
+                label="add_diagnosis_no_button",
+                clicks=1,
+            )
+            if not clicked2:
+                recovered = manual_recover_step(
+                    win,
+                    "Не удалось нажать «Нет» в окне добавления диагноза.",
+                    "Нажмите «Нет» вручную.",
+                )
+                if not recovered:
+                    return False
+        else:
+            log("[VISIT] Окно «Добавить диагноз?» не появилось — продолжаю")
+
+        if not _wait_reason_field_after_visit(
+            win,
+            label="Стационар: ожидание поля «Повод обращения»",
+        ):
+            recovered = manual_recover_step(
+                win,
+                "После стационарных окон не найдено поле «Повод обращения».",
+                "Подготовьте окно приёма вручную до поля «Повод обращения».",
+            )
+            if not recovered:
+                return False
+
+        log("[VISIT] Стационарный приём открыт")
+        return "inpatient"
+
+    # --------------------------------------------------------------
+    # Ordinary referral popup branch.
+    # --------------------------------------------------------------
+    if branch == "without_referral":
+        log("[VISIT] Найдено окно направления -> «Прием без направления»")
+
+        # Use current image location/offset logic instead of raw pyautogui.
+        clicked = click_template_target(
+            win,
+            "without_referral",
+            offset=(0, 0),
+            offset_key=None,
+            timeout=4,
+            label="without_referral",
+            clicks=1,
+        )
+        if not clicked:
+            recovered = manual_recover_step(
+                win,
+                "Не удалось выбрать «Прием без направления».",
+                "Выберите вариант вручную.",
+            )
+            if not recovered:
+                return False
+
+        if not _wait_reason_field_after_visit(
+            win,
+            label="Обычный приём: ожидание поля «Повод обращения»",
+        ):
+            recovered = manual_recover_step(
+                win,
+                "После окна направления не найдено поле «Повод обращения».",
+                "Подготовьте окно приёма вручную до поля «Повод обращения».",
+            )
+            if not recovered:
+                return False
+
+        log("[VISIT] Обычный приём открыт")
+        return "normal"
+
+    # reason_field was already visible immediately.
+    log("[VISIT] Поле «Повод обращения» уже открыто")
+    return "normal"
+
+
+def handle_post_visit_plus_flow(win):
+    """
+    Backward-compatible wrapper for old call sites.
+    New code should call handle_visit_opening_flow().
+    """
+    result = handle_visit_opening_flow(win)
+    return bool(result)
 
 
 def handle_inpatient_popup_if_present(win):
     """
-    Если после создания приема появляется окно:
-    'Пациент стационарный, вести прием в рамках стационара?'
-    — нажимаем Да.
-    Затем, если появляется окно 'Добавить диагноз?' — нажимаем Нет.
+    Legacy compatibility only.
 
-    Возвращает:
-    True  -> стационарное окно было обработано
-    False -> стационарного окна не было
+    In v32 the inpatient question is intentionally NOT checked before Enter.
+    The real handling is inside handle_visit_opening_flow().
     """
-    log("Проверяю окно стационарного пациента")
-
-    loc = locate_image_on_screen(
-        "inpatient_question",
-        timeout=1.5,
+    log(
+        "[VISIT] legacy handle_inpatient_popup_if_present вызван отдельно; "
+        "статус стационара теперь определяется только после Enter"
     )
-
-    if not loc:
-        log("Окно стационарного пациента не появилось")
-        return False
-
-    log("Найдено окно стационарного пациента -> нажимаю Да")
-
-    clicked = click_template_target(
-        win,
-        "inpatient_yes_button",
-        offset=INPATIENT_YES_BUTTON_OFFSET,
-        offset_key="inpatient_yes_button_offset",
-        timeout=4,
-        label="inpatient_yes_button",
-        clicks=1,
-    )
-    if not clicked:
-        fail(win, "Не удалось нажать Да в окне стационарного пациента")
-        return False
-
-    time.sleep(0.8)
-    checkpoint()
-
-    log("Проверяю окно добавления диагноза")
-
-    loc2 = locate_image_on_screen(
-        "add_diagnosis_question",
-        timeout=2.0,
-    )
-
-    if loc2:
-        log("Найдено окно добавления диагноза -> нажимаю Нет")
-
-        clicked2 = click_template_target(
-            win,
-            "add_diagnosis_no_button",
-            offset=ADD_DIAGNOSIS_NO_BUTTON_OFFSET,
-            offset_key="add_diagnosis_no_button_offset",
-            timeout=4,
-            label="add_diagnosis_no_button",
-            clicks=1,
-        )
-        if not clicked2:
-            fail(win, "Не удалось нажать Нет в окне добавления диагноза")
-            return False
-
-        time.sleep(0.8)
-        checkpoint()
-    else:
-        log("Окно добавления диагноза не появилось")
-
-    return True
-
+    return False
 
 
 def fill_reason_code(win):
@@ -1666,108 +2382,240 @@ def fill_reason_code(win):
 
 
 def fill_goal_complex(win):
-    log("Выбор 'Цель обращения'")
-    click_template_target(
+    """Выбор цели обращения только кликами по шаблонам-якорям."""
+    log("Выбор 'Цель обращения' по шаблонам-якорям")
+
+    clicked = click_template_target(
         win,
         "goal_dropdown",
         offset=GOAL_DROPDOWN_OFFSET,
         offset_key="goal_dropdown_offset",
         timeout=6,
-        label="goal_dropdown"
+        label="Цель обращения: раскрыть список",
     )
+    if not clicked:
+        return False
 
-    time.sleep(0.3)
-    checkpoint()
-    pyautogui.press("pgdn")
-    time.sleep(0.2)
-    checkpoint()
-    pyautogui.press("up")
-    time.sleep(0.2)
-    checkpoint()
-    pyautogui.press("enter")
     time.sleep(0.5)
     checkpoint()
 
+    log("Цель обращения: кликаю вариант 'Активное посещение' по goal_active_visit_item")
+    clicked = click_template_target(
+        win,
+        "goal_active_visit_item",
+        offset=GOAL_COMPLEX_ITEM_OFFSET,
+        offset_key="goal_active_visit_item_offset",
+        timeout=6,
+        label="Цель обращения: Активное посещение",
+    )
+    if not clicked:
+        return False
+
+    time.sleep(0.5)
+    checkpoint()
     log("Цель обращения выбрана")
+    return True
+
+
+def _wait_template_with_delayed_retry(
+    template_key: str,
+    *,
+    first_checks=2,
+    first_pause=0.8,
+    first_probe_timeout=1.2,
+    retry_delay=5.0,
+    retry_rounds=3,
+    second_checks=2,
+    second_pause=0.8,
+    second_probe_timeout=1.2,
+    label=None,
+):
+    """
+    Поиск для тяжёлых мест МИС:
+    обычная попытка + retry_rounds повторных проверок через retry_delay секунд.
+    """
+    name = label or template_key
+
+    for round_no in range(0, int(retry_rounds) + 1):
+        if round_no:
+            log(
+                f"{name}: МИС ещё не готова. "
+                f"Жду {retry_delay:.1f} сек перед повтором {round_no}/{retry_rounds}"
+            )
+            waited = 0.0
+            while waited < retry_delay:
+                checkpoint()
+                step = min(0.25, retry_delay - waited)
+                time.sleep(step)
+                waited += step
+
+        checks = first_checks if round_no == 0 else second_checks
+        pause = first_pause if round_no == 0 else second_pause
+        probe = first_probe_timeout if round_no == 0 else second_probe_timeout
+
+        log(f"{name}: проверка {round_no + 1}/{int(retry_rounds) + 1}")
+        loc = wait_for_template_strict(
+            template_key,
+            checks=max(1, int(checks)),
+            pause=float(pause),
+            probe_timeout=float(probe),
+        )
+        checkpoint()
+
+        if loc:
+            log(f"{name}: найден на проверке {round_no + 1}")
+            return loc
+
+    log(f"{name}: не найден после {int(retry_rounds) + 1} серий проверок")
+    return None
+
+
+def _wait_template_disappear_with_retries(
+    template_key: str,
+    *,
+    retry_delay=5.0,
+    retry_rounds=3,
+    probe_timeout=1.0,
+    label=None,
+):
+    """Ждёт исчезновения модального окна в тяжёлых местах МИС."""
+    name = label or template_key
+
+    for round_no in range(0, int(retry_rounds) + 1):
+        loc = locate_image_on_screen(template_key, timeout=probe_timeout)
+        checkpoint()
+        if not loc:
+            log(f"{name}: окно исчезло / следующий этап готов")
+            return True
+
+        if round_no >= int(retry_rounds):
+            break
+
+        log(
+            f"{name}: окно всё ещё открыто. "
+            f"Жду {retry_delay:.1f} сек, повтор {round_no + 1}/{retry_rounds}"
+        )
+        waited = 0.0
+        while waited < retry_delay:
+            checkpoint()
+            step = min(0.25, retry_delay - waited)
+            time.sleep(step)
+            waited += step
+
+    log(f"{name}: окно не исчезло после повторных проверок")
+    return False
 
 
 def open_work_service(win):
     log("Открытие выбора работы/услуги")
 
-    ok = adaptive_click_template_target(
-        win=win,
-        template_key="work_plus",
+    # Нажимаем Work Plus без раннего expected_template.
+    # Раньше adaptive_click_template_target слишком быстро проверял 0,00
+    # и мог считать открытие неудачным ещё во время загрузки окна услуг.
+    clicked = click_template_target(
+        win,
+        "work_plus",
         offset=WORK_PLUS_OFFSET,
         offset_key="work_plus_offset",
         timeout=6,
         label="work_plus",
         clicks=1,
-        expected_template="service_price_zero",
-        expected_checks=max(3, int(SERVICE_LIST_TIMEOUT // max(1.0, SERVICE_LIST_PROBE_TIMEOUT))),
-        expected_pause=1.0,
-        expected_probe_timeout=SERVICE_LIST_PROBE_TIMEOUT,
-        post_click_sleep=SERVICE_WINDOW_WAIT,
     )
 
-    if ok:
-        return True
+    if not clicked:
+        log("Work Plus не удалось нажать по шаблону -> fallback coordinate")
 
-    log("Fallback: пробую координату work_plus_fallback_point")
+        try:
+            x, y = get_config_point(win, "work_plus_fallback_point")
+        except Exception:
+            x = y = None
 
-    x, y = get_config_point(win, "work_plus_fallback_point")
+        if x is None or y is None or not _win32_click(x, y):
+            return manual_recover_step(
+                win,
+                "Не удалось автоматически открыть список услуг.",
+                "Откройте список услуг вручную.",
+            )
 
-    if not debug_click_point(x, y):
-        fail(win, "Fallback точка work_plus небезопасна")
-        return False
-
-    pyautogui.click(x, y)
     checkpoint()
-    time.sleep(SERVICE_WINDOW_WAIT)
+
+    # Дать интерфейсу начать открываться.
+    time.sleep(max(0.5, SERVICE_WINDOW_WAIT))
     checkpoint()
 
-    # проверяем открылось ли окно услуг
-    loc = wait_for_template_strict(
+    # Обязательное подтверждение открытия окна услуг:
+    # первая попытка, затем ещё одна через 5 секунд.
+    loc = _wait_template_with_delayed_retry(
         "service_price_zero",
-        checks=3,
-        pause=1.0,
-        probe_timeout=SERVICE_LIST_PROBE_TIMEOUT
+        first_checks=2,
+        first_pause=0.8,
+        first_probe_timeout=SERVICE_LIST_PROBE_TIMEOUT,
+        retry_delay=5.0,
+        retry_rounds=3,
+        second_checks=2,
+        second_pause=1.0,
+        second_probe_timeout=SERVICE_LIST_PROBE_TIMEOUT,
+        label="Список услуг / 0,00",
     )
-    checkpoint()
 
     if not loc:
-        fail(win, "После fallback не открылся список услуг")
-        return False
+        return manual_recover_step(
+            win,
+            "Список услуг не распознан даже после повторной проверки через 5 секунд.",
+            "Откройте список услуг вручную и оставьте его открытым.",
+        )
 
+    log("Список услуг подтверждён")
     return True
 
 
+
 def choose_first_service(win):
-    log("Ожидание появления списка услуг / шаблона 0,00 РУБ")
+    """
+    Выбор первой услуги по шаблону 0,00.
 
-    if USE_SMART_SERVICE_WAIT:
-        checks = max(3, int(SERVICE_LIST_TIMEOUT // max(1.0, SERVICE_LIST_PROBE_TIMEOUT)))
-        loc = wait_for_template_strict(
-            "service_price_zero",
-            checks=checks,
-            pause=1.0,
-            probe_timeout=SERVICE_LIST_PROBE_TIMEOUT
-        )
-        checkpoint()
-    else:
-        time.sleep(SERVICE_WINDOW_WAIT)
-        checkpoint()
-        loc = locate_image_on_screen("service_price_zero", timeout=3)
+    Важно: координата клика вычисляется непосредственно перед кликом
+    из АКТУАЛЬНОГО service_price_zero_offset из coordinates.json.
+    Это устраняет рассинхрон между настройкой/пробным кликом и рабочим сценарием.
+    """
+    log("Ожидание списка услуг / 0,00")
 
+    loc = _wait_template_with_delayed_retry(
+        "service_price_zero",
+        first_checks=2,
+        first_pause=0.8,
+        first_probe_timeout=SERVICE_LIST_PROBE_TIMEOUT,
+        retry_delay=5.0,
+        retry_rounds=3,
+        second_checks=2,
+        second_pause=0.8,
+        second_probe_timeout=SERVICE_LIST_PROBE_TIMEOUT,
+        label="Выбор услуги / 0,00",
+    )
     if not loc:
         action = fail(win, "Не найден шаблон service_price_zero")
         if action != "continue":
             return False
-        else:
-            log("Продолжаю без выбора услуги")
-            return True
+        log("Продолжаю без автоматического выбора услуги")
+        return True
 
-    final_x = loc.x + SERVICE_PRICE_ZERO_OFFSET[0]
-    final_y = loc.y + SERVICE_PRICE_ZERO_OFFSET[1]
+    # Не используем загруженную при старте SERVICE_PRICE_ZERO_OFFSET:
+    # перечитываем coordinates.json прямо сейчас.
+    live_offset = _live_mis_coord(
+        "service_price_zero_offset",
+        list(SERVICE_PRICE_ZERO_OFFSET),
+    )
+    if not isinstance(live_offset, (list, tuple)) or len(live_offset) != 2:
+        live_offset = SERVICE_PRICE_ZERO_OFFSET
+
+    final_x = int(loc.x + int(live_offset[0]))
+    final_y = int(loc.y + int(live_offset[1]))
+
+    log(
+        f"service_price_zero: template_center=({loc.x},{loc.y}) "
+        f"LIVE offset=({int(live_offset[0])},{int(live_offset[1])}) "
+        f"click=({final_x},{final_y})"
+    )
 
     final_x, final_y, skip_click = interactive_template_click_adjustment(
         win=win,
@@ -1778,14 +2626,27 @@ def choose_first_service(win):
         final_y=final_y,
         label="service_price_zero",
     )
+
     if not skip_click:
-        pyautogui.click(final_x, final_y, clicks=2, interval=0.2)
+        # Тот же Win32-механизм, что используется стабильными кликами бота.
+        if not debug_click_point(final_x, final_y):
+            return manual_recover_step(
+                win,
+                "Точка клика service_price_zero оказалась вне рабочего стола.",
+                "Дважды нажмите нужную услугу вручную.",
+            )
+        if not _win32_click(final_x, final_y, clicks=2, interval=0.2):
+            return manual_recover_step(
+                win,
+                "Не удалось физически нажать service_price_zero.",
+                "Дважды нажмите нужную услугу вручную.",
+            )
         checkpoint()
 
     time.sleep(0.6)
     checkpoint()
     log("Подтверждаю выбор услуги: F2")
-    pyautogui.press("f2")
+    _win32_press_key("f2")
     time.sleep(1.0)
     checkpoint()
     return True
@@ -1829,8 +2690,11 @@ def open_history_fluoro(win):
     checkpoint()
 
     if not loc:
-        fail(win, "Протокол не открылся: якорь 'Просмотр ИБ' не найден")
-        return False
+        return manual_recover_step(
+            win,
+            "Не удалось подтвердить открытие протокола.",
+            "Откройте нужный протокол вручную.",
+        )
 
     log("Протокол открыт")
     time.sleep(0.6)
@@ -1838,11 +2702,64 @@ def open_history_fluoro(win):
     return True
 
 
-def choose_template(win, mode: str):
-    if mode not in VALID_MODES:
-        raise ValueError(f"Неизвестный режим: {mode}")
 
-    row_key = MODE_TEMPLATES[mode]
+def open_history_xray(win):
+    """
+    Открывает Историю болезни и выбирает именно
+    «Рентгенографическое исследование».
+    """
+    log("Открытие меню История болезни")
+
+    clicked = click_template_target(
+        win,
+        "history_menu",
+        offset=HISTORY_MENU_OFFSET,
+        offset_key="history_menu_offset",
+        timeout=8,
+        label="history_menu",
+    )
+    if not clicked:
+        return False
+
+    time.sleep(max(HISTORY_MENU_WAIT, 1.5))
+    checkpoint()
+
+    log("Выбор рентгенографического исследования")
+    clicked = click_template_target(
+        win,
+        "history_xray_item",
+        offset=HISTORY_XRAY_ITEM_OFFSET,
+        offset_key="history_xray_item_offset",
+        timeout=6,
+        label="history_xray_item",
+    )
+    if not clicked:
+        return False
+
+    log("Проверяю открытие рентген-протокола по якорю 'Просмотр ИБ'")
+    loc = wait_for_template_strict(
+        "protocol_anchor",
+        checks=WAIT_CHECKS,
+        pause=WAIT_PAUSE,
+        probe_timeout=WAIT_PROBE_TIMEOUT,
+    )
+    checkpoint()
+
+    if not loc:
+        return manual_recover_step(
+            win,
+            "Не удалось подтвердить открытие рентген-протокола.",
+            "Откройте рентгенографический протокол вручную.",
+        )
+
+    log("Рентген-протокол открыт")
+    time.sleep(0.6)
+    checkpoint()
+    return True
+
+
+def choose_template(win, mode: str):
+    row_key = validate_protocol_mode(mode)
     log(f"Открываю меню 'Шаблоны' для режима: {mode} -> {row_key}")
 
     ok = adaptive_click_template_target(
@@ -1889,8 +2806,11 @@ def choose_template(win, mode: str):
     )
     checkpoint()
     if not row_loc:
-        fail(win, f"Строка шаблона {row_key} не найдена")
-        return False
+        return manual_recover_step(
+            win,
+            f"Не найден нужный шаблон: {row_key}",
+            "Выберите нужный шаблон вручную так, чтобы протокол уже был загружен.",
+        )
 
     pyautogui.click(row_loc.x, row_loc.y, clicks=2, interval=0.2)
     checkpoint()
@@ -1909,20 +2829,24 @@ def choose_template(win, mode: str):
 
 
 def handle_sign_password_if_needed(win):
-    log("Ожидание окна подписи")
+    log("Ожидание окна подписи — тяжёлое место, до 3 повторов через 5 секунд")
 
-    dialog = wait_for_template_strict(
+    dialog = _wait_template_with_delayed_retry(
         "sign_password_dialog",
-        checks=WAIT_CHECKS,
-        pause=WAIT_PAUSE,
-        probe_timeout=WAIT_PROBE_TIMEOUT
+        first_checks=2,
+        first_pause=0.8,
+        first_probe_timeout=WAIT_PROBE_TIMEOUT,
+        retry_delay=5.0,
+        retry_rounds=3,
+        second_checks=2,
+        second_pause=0.8,
+        second_probe_timeout=WAIT_PROBE_TIMEOUT,
+        label="Окно подписи протокола",
     )
     checkpoint()
     if not dialog:
-        log("Окно подписи не появилось")
+        log("Окно подписи протокола не появилось после повторных проверок")
         return False
-
-    log("Окно подписи найдено")
 
     field = wait_for_template_strict(
         "sign_password_field",
@@ -1931,35 +2855,36 @@ def handle_sign_password_if_needed(win):
         probe_timeout=WAIT_PROBE_TIMEOUT
     )
     checkpoint()
+
     if field:
         pyautogui.click(field.x, field.y)
         checkpoint()
-        log("Поле пароля найдено по шаблону")
+        log("Поле пароля найдено")
     else:
-        log("Поле пароля не найдено по шаблону -> fallback-клик в центр диалога")
         pyautogui.click(dialog.x, dialog.y)
         checkpoint()
         time.sleep(0.5)
-        checkpoint()
-
-    time.sleep(0.2)
-    checkpoint()
 
     pyautogui.hotkey("ctrl", "a")
     time.sleep(0.1)
-    checkpoint()
     pyautogui.press("backspace")
     time.sleep(0.1)
-    checkpoint()
-
     pyautogui.write(MIS_SETTINGS["sign_password"], interval=0.03)
     time.sleep(0.2)
     checkpoint()
     pyautogui.press("enter")
-    time.sleep(1.0)
     checkpoint()
 
-    log("Пароль подписи введен")
+    # Не считаем Enter мгновенным успехом: ИК может подвиснуть на подписи.
+    _wait_template_disappear_with_retries(
+        "sign_password_dialog",
+        retry_delay=5.0,
+        retry_rounds=3,
+        probe_timeout=1.0,
+        label="Подпись протокола",
+    )
+
+    log("Подпись протокола обработана")
     return True
 
 
@@ -1979,8 +2904,12 @@ def fill_template_date_and_sign(win, study_date=None):
         post_click_sleep=0.3,
     )
     if not ok:
-        fail(win, "Не удалось установить фокус в поле даты исследования")
-        return False
+        return manual_recover_step(
+            win,
+            "Не удалось автоматически установить фокус в поле даты исследования.",
+            f"Введите дату {dt} вручную, сохраните/подпишите протокол "
+            "и оставьте МИС на следующем этапе.",
+        )
 
     pyautogui.click()
     time.sleep(0.1)
@@ -2018,6 +2947,11 @@ def fill_template_date_and_sign(win, study_date=None):
 
 
 def cancel_diagnosis(win):
+    """
+    СТАРЫЙ сценарий отмены диагноза.
+    Оставлен для совместимости/отладки, но основной full_run флюорографии
+    и рентген используют close_xray_diagnosis_314_304().
+    """
     log("Отмена диагноза: шаг 1 -> diagnosis_drop")
 
     ok = adaptive_click_template_target(
@@ -2072,6 +3006,380 @@ def cancel_diagnosis(win):
 
     return True
 
+def close_xray_diagnosis_314_304(win):
+    """
+    Закрытие активного диагноза для флюорографии/рентгена.
+
+    V6:
+    - если нужный элемент не найден, предлагается выполнить действие вручную
+      и нажать "Продолжить";
+    - после ручного действия сценарий идёт дальше, а не обрывается;
+    - пауза после подтверждения подписи перед F2 = 10 секунд.
+    """
+
+    print("### XRAY/FLUORO DIAG V6 MANUAL CONTINUE ###")
+    log("### XRAY/FLUORO DIAG V6 MANUAL CONTINUE ###")
+    log("[DIAG V6] Начинаю закрытие диагноза")
+
+    def manual_continue(message: str) -> bool:
+        """
+        Просит пользователя выполнить текущий шаг вручную.
+        True  -> продолжить со следующего шага.
+        False -> остановить сценарий.
+        """
+        log(f"[DIAG V6] Ручное вмешательство: {message}")
+
+        ok = ui_manual_continue(
+            f"{message}\n\n"
+            f"Выполните действие вручную в МИС,\n"
+            f"затем нажмите «Продолжить»."
+        )
+
+        if not ok:
+            log("[DIAG V6] Пользователь отменил продолжение")
+            return False
+
+        log("[DIAG V6] Пользователь подтвердил ручное выполнение шага")
+        checkpoint()
+        return True
+
+    # ---------------------------------------------------------
+    # 1. diagnosis_drop
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 1: ищу diagnosis_drop")
+
+    drop = locate_image_on_screen(
+        "diagnosis_drop",
+        timeout=4.0,
+    )
+
+    if drop:
+        drop_x = drop.x + DIAGNOSIS_DROP_OFFSET[0]
+        drop_y = drop.y + DIAGNOSIS_DROP_OFFSET[1]
+
+        log(
+            f"[DIAG V6] diagnosis_drop: "
+            f"base=({drop.x},{drop.y}) final=({drop_x},{drop_y})"
+        )
+
+        if debug_click_point(drop_x, drop_y):
+            pyautogui.click(drop_x, drop_y)
+            log("[DIAG V6] Клик по diagnosis_drop выполнен")
+            time.sleep(0.6)
+            checkpoint()
+        else:
+            if not manual_continue(
+                "Не удалось автоматически нажать кнопку открытия списка диагнозов."
+            ):
+                return False
+    else:
+        if not manual_continue(
+            "Не найдено поле/кнопка открытия списка диагнозов.\n"
+            "Откройте список диагнозов вручную."
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 2. Активный диагноз
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 2: ищу активный диагноз diagnosis_code")
+
+    diagnosis = locate_image_on_screen(
+        "diagnosis_code",
+        timeout=4.0,
+    )
+
+    if diagnosis:
+        diagnosis_x = diagnosis.x + DIAGNOSIS_CODE_OFFSET[0]
+        diagnosis_y = diagnosis.y + DIAGNOSIS_CODE_OFFSET[1]
+
+        log(
+            f"[DIAG V6] diagnosis_code: "
+            f"base=({diagnosis.x},{diagnosis.y}) "
+            f"final=({diagnosis_x},{diagnosis_y})"
+        )
+
+        if debug_click_point(diagnosis_x, diagnosis_y):
+            pyautogui.click(diagnosis_x, diagnosis_y)
+            log("[DIAG V6] Клик по активному диагнозу выполнен")
+            time.sleep(0.7)
+            checkpoint()
+        else:
+            if not manual_continue(
+                "Не удалось автоматически нажать на активный диагноз.\n"
+                "Нажмите на активный диагноз вручную."
+            ):
+                return False
+    else:
+        if not manual_continue(
+            "Активный диагноз не найден автоматически.\n"
+            "Нажмите на нужный активный диагноз вручную."
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 3. Пункт "Закрыть"
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 3: ищу пункт 'Закрыть'")
+
+    close_item = locate_image_on_screen(
+        "diagnosis_close_item",
+        timeout=4.0,
+    )
+
+    if close_item:
+        close_x = close_item.x + DIAGNOSIS_CLOSE_ITEM_OFFSET[0]
+        close_y = close_item.y + DIAGNOSIS_CLOSE_ITEM_OFFSET[1]
+
+        log(
+            f"[DIAG V6] diagnosis_close_item: "
+            f"base=({close_item.x},{close_item.y}) "
+            f"final=({close_x},{close_y})"
+        )
+
+        if debug_click_point(close_x, close_y):
+            pyautogui.click(close_x, close_y)
+            log("[DIAG V6] Клик по 'Закрыть' выполнен")
+            time.sleep(0.9)
+            checkpoint()
+        else:
+            if not manual_continue(
+                "Не удалось автоматически нажать пункт «Закрыть».\n"
+                "Нажмите «Закрыть» вручную."
+            ):
+                return False
+    else:
+        if not manual_continue(
+            "Пункт «Закрыть» не найден автоматически.\n"
+            "Нажмите «Закрыть» вручную."
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 4. Окно закрытия случая / коды 314 и 304
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 4: ищу окно закрытия случая")
+
+    close_anchor = locate_image_on_screen(
+        "case_close_current_diagnosis",
+        timeout=5.0,
+    )
+
+    manual_codes_done = False
+
+    if not close_anchor:
+        # Если окно не смогли распознать, пользователь может заполнить
+        # оба кода вручную и оставить окно открытым на следующем шаге.
+        if not manual_continue(
+            "Окно «Закрытие случая» не распознано автоматически.\n"
+            "Вручную заполните:\n"
+            "• Результат случая — 314 + Enter\n"
+            "• Исход заболевания — 304 + Enter\n"
+            "После этого оставьте окно открытым."
+        ):
+            return False
+
+        manual_codes_done = True
+    else:
+        log(
+            f"[DIAG V6] Окно закрытия случая подтверждено: "
+            f"anchor=({close_anchor.x},{close_anchor.y})"
+        )
+
+    def fill_case_code(code: str, dx: int, dy: int, label: str):
+        field_x = int(close_anchor.x + dx)
+        field_y = int(close_anchor.y + dy)
+
+        log(
+            f"[DIAG V6] {label}: "
+            f"поле=({field_x},{field_y}), код={code}"
+        )
+
+        if not debug_click_point(field_x, field_y):
+            return manual_continue(
+                f"Не удалось автоматически попасть в поле «{label}».\n"
+                f"Введите вручную код {code} и нажмите Enter."
+            )
+
+        pyautogui.click(field_x, field_y)
+        time.sleep(0.35)
+        checkpoint()
+
+        pyautogui.hotkey("ctrl", "a")
+        time.sleep(0.12)
+        pyautogui.press("backspace")
+        time.sleep(0.12)
+
+        pyautogui.write(code, interval=0.18)
+        log(f"[DIAG V6] {label}: код {code} набран")
+        time.sleep(0.45)
+
+        pyautogui.press("enter")
+        log(f"[DIAG V6] {label}: Enter")
+        time.sleep(0.9)
+        checkpoint()
+
+        return True
+
+    if not manual_codes_done:
+        if not fill_case_code(
+            code="314",
+            dx=-82,
+            dy=-72,
+            label="Результат случая",
+        ):
+            return False
+
+        if not fill_case_code(
+            code="304",
+            dx=-82,
+            dy=-44,
+            label="Исход заболевания",
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 5. Закрыть с текущим диагнозом
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 5: Закрыть с текущим диагнозом")
+
+    close_anchor = locate_image_on_screen(
+        "case_close_current_diagnosis",
+        timeout=5.0,
+    )
+
+    if close_anchor:
+        close_btn_x = close_anchor.x + CASE_CLOSE_CURRENT_DIAGNOSIS_OFFSET[0]
+        close_btn_y = close_anchor.y + CASE_CLOSE_CURRENT_DIAGNOSIS_OFFSET[1]
+
+        if debug_click_point(close_btn_x, close_btn_y):
+            pyautogui.click(close_btn_x, close_btn_y)
+            log("[DIAG V6] Нажато 'Закрыть с текущим диагнозом'")
+            time.sleep(0.9)
+            checkpoint()
+        else:
+            if not manual_continue(
+                "Не удалось автоматически нажать «Закрыть с текущим диагнозом».\n"
+                "Нажмите эту кнопку вручную."
+            ):
+                return False
+    else:
+        if not manual_continue(
+            "Кнопка «Закрыть с текущим диагнозом» не найдена.\n"
+            "Нажмите её вручную."
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 6. Да, с подписью
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 6: ищу 'Да, с подписью'")
+
+    signed = locate_image_on_screen(
+        "epicrisis_yes_signed",
+        timeout=6.0,
+    )
+
+    if signed:
+        signed_x = signed.x + EPICRISIS_YES_SIGNED_OFFSET[0]
+        signed_y = signed.y + EPICRISIS_YES_SIGNED_OFFSET[1]
+
+        if debug_click_point(signed_x, signed_y):
+            pyautogui.click(signed_x, signed_y)
+            log("[DIAG V6] Нажато 'Да, с подписью'")
+            time.sleep(1.0)
+            checkpoint()
+        else:
+            if not manual_continue(
+                "Не удалось автоматически нажать «Да, с подписью».\n"
+                "Нажмите эту кнопку вручную."
+            ):
+                return False
+    else:
+        if not manual_continue(
+            "Кнопка «Да, с подписью» не найдена автоматически.\n"
+            "Нажмите «Да, с подписью» вручную."
+        ):
+            return False
+
+    # ---------------------------------------------------------
+    # 7. Окно подписи
+    # ---------------------------------------------------------
+    # После клика "Да, с подписью" окно подписи появляется не мгновенно.
+    # Если отправить Space сразу, клавиша может уйти в предыдущее окно.
+    log("[DIAG V6] Шаг 7: жду окно подписи эпикриза — до 3 повторов через 5 секунд")
+    epic_sign_dialog = _wait_template_with_delayed_retry(
+        "sign_password_dialog",
+        first_checks=2,
+        first_pause=0.8,
+        first_probe_timeout=WAIT_PROBE_TIMEOUT,
+        retry_delay=5.0,
+        retry_rounds=3,
+        second_checks=2,
+        second_pause=0.8,
+        second_probe_timeout=WAIT_PROBE_TIMEOUT,
+        label="Окно подписи эпикриза",
+    )
+
+    if not epic_sign_dialog:
+        log("[DIAG V6] Шаблон окна подписи эпикриза не найден; оставляю старый fallback Space")
+        time.sleep(1.0)
+        checkpoint()
+
+    log("[DIAG V6] Подтверждение подписи эпикриза -> Space")
+    pyautogui.press("space")
+    checkpoint()
+
+    if epic_sign_dialog:
+        _wait_template_disappear_with_retries(
+            "sign_password_dialog",
+            retry_delay=5.0,
+            retry_rounds=3,
+            probe_timeout=1.0,
+            label="Подпись эпикриза",
+        )
+    else:
+        # Если конкретный шаблон диалога не распознан, всё равно даём ИК
+        # три пятисекундных интервала на завершение тяжёлой операции.
+        for retry_no in range(1, 4):
+            log(f"[DIAG V6] Эпикриз: ожидание ИК 5 сек ({retry_no}/3)")
+            time.sleep(5.0)
+            checkpoint()
+
+    # RDP/МИС иногда теряет клавиатурный фокус после модального окна подписи.
+    # Перед финальной клавиатурной цепочкой явно возвращаем фокус окну МИС.
+    log("[DIAG V6] Возвращаю фокус окну МИС перед F2")
+    try:
+        win.activate()
+        time.sleep(0.8)
+        checkpoint()
+    except Exception as e:
+        log(f"[DIAG V6] Не удалось явно активировать окно МИС: {e}")
+
+    # ---------------------------------------------------------
+    # 8. Финальная цепочка
+    # ---------------------------------------------------------
+    log("[DIAG V6] Шаг 8: отправляю F2")
+    pyautogui.press("f2")
+    log("[DIAG V6] F2 отправлен")
+    time.sleep(1.2)
+    checkpoint()
+
+    log("[DIAG V6] Шаг 8: отправляю первый Space")
+    pyautogui.press("space")
+    log("[DIAG V6] Первый Space отправлен")
+    time.sleep(1.0)
+    checkpoint()
+
+    log("[DIAG V6] Шаг 8: отправляю второй Space")
+    pyautogui.press("space")
+    log("[DIAG V6] Второй Space отправлен")
+    time.sleep(1.0)
+    checkpoint()
+
+    log("[DIAG V6] Диагноз закрыт успешно")
+    return True
+
 
 def final_save_chain():
     log("Финальная цепочка: F2 -> Space -> Space")
@@ -2099,8 +3407,11 @@ def ensure_search_screen_ready(win):
     )
     checkpoint()
     if not anchor:
-        fail(win, "МИС не вернулась на экран поиска пациента")
-        return False
+        return manual_recover_step(
+            win,
+            "МИС не вернулась на экран поиска пациента автоматически.",
+            "Перейдите на экран поиска пациента вручную.",
+        )
 
     nudge_search_selection()
     log("Экран поиска пациента подтвержден")
@@ -2152,18 +3463,18 @@ def ensure_open_patient_card(win):
     checkpoint()
 
     if not loc:
-        action = fail(win, "Не найдено окно открытой карточки пациента (reason_field)")
-        if action == "continue":
-            return True
-        return False
+        return manual_recover_step(
+            win,
+            "Не удалось распознать открытую карточку пациента.",
+            "Откройте карточку/окно приема вручную.",
+        )
 
     log("Открытая карточка пациента подтверждена")
     return True
 
 
 def continue_from_open_patient_card(task, step_mode=False, stop_stage: str | None = None):
-    if task.mode not in VALID_MODES:
-        raise ValueError(f"Неизвестный режим: {task.mode}. Допустимые: {sorted(VALID_MODES)}")
+    validate_protocol_mode(task.mode)
 
     win = find_mis_window()
     log(f"Продолжение из открытой карточки. Режим: {task.mode}")
@@ -2229,15 +3540,19 @@ def continue_from_open_patient_card(task, step_mode=False, stop_stage: str | Non
     elif step_mode:
         ask_user_checkpoint("После шаблона и ввода даты")
 
-    ok = cancel_diagnosis(win)
+    log("[FLUORO] Закрытие диагноза: 314 / 304")
+    ok = close_xray_diagnosis_314_304(win)
     checkpoint()
     if not ok:
         return
 
-    if stop_at_stage_open_card(win, "after_cancel_diagnosis", stop_stage, "После отмены диагноза"):
+    if stop_at_stage_open_card(
+        win,
+        "after_cancel_diagnosis",
+        stop_stage,
+        "После закрытия диагноза 314/304",
+    ):
         return
-
-    final_save_chain()
 
     log("Сценарий из открытой карточки завершен успешно")
     save_window_screenshot(win, "success_open_card")
@@ -2265,8 +3580,7 @@ def full_run(
     set_active_controller(controller)
 
     try:
-        if mode not in VALID_MODES:
-            raise ValueError(f"Неизвестный режим: {mode}. Допустимые: {sorted(VALID_MODES)}")
+        validate_protocol_mode(mode)
 
         win = find_mis_window()
         log(f"Окно МИС активировано. Режим: {mode}")
@@ -2297,10 +3611,16 @@ def full_run(
         if not ok:
             return
 
-        ok = handle_post_visit_plus_flow(win)
+        visit_flow = handle_visit_opening_flow(win)
         checkpoint()
-        if not ok:
+        if visit_flow is False:
             return
+
+        is_inpatient_flow = (visit_flow == "inpatient")
+        if is_inpatient_flow:
+            log("[FLUORO] Приём открыт по стационарной ветке")
+        else:
+            log("[FLUORO] Приём открыт по обычной ветке")
 
         if stop_at_stage(win, "after_open_visit", stop_stage, "После открытия приема"):
             return
@@ -2356,17 +3676,25 @@ def full_run(
             ask_manual_edit_continue()
 
         # --- Диагноз ---
-        ok = cancel_diagnosis(win)
-        checkpoint()
-        if not ok:
+        if is_inpatient_flow:
+            log("[FLUORO] Стационарный пациент: закрытие диагноза 314/304 пропущено")
+        else:
+            log("[FLUORO] Закрытие диагноза: 314 / 304")
+            ok = close_xray_diagnosis_314_304(win)
+            checkpoint()
+            if not ok:
+                return
+
+        if stop_at_stage(
+            win,
+            "after_cancel_diagnosis",
+            stop_stage,
+            "После закрытия диагноза 314/304",
+        ):
             return
 
-        if stop_at_stage(win, "after_cancel_diagnosis", stop_stage, "После диагноза"):
-            return
-
-        # --- Финал ---
-        final_save_chain()
-
+        # Финальная F2 -> Space -> Space уже выполняется
+        # внутри close_xray_diagnosis_314_304().
         log("Сценарий завершен успешно")
         save_window_screenshot(win, "success_window")
         clear_focus_after_finish(win)
