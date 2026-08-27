@@ -1,0 +1,33 @@
+{
+  "mis": {
+    "search_anchor_offset": [0, 0],
+    "search_anchor_x_offset": 210,
+    "visit_plus_offset": [0, 0],
+    "reason_field_offset": [0, 0],
+    "goal_dropdown_offset": [0, 0],
+    "goal_active_visit_item_offset": [0, 0],
+    "work_plus_offset": [0, 0],
+    "service_price_zero_offset": [0, 0],
+    "history_menu_offset": [0, 0],
+    "history_fluoro_item_offset": [0, 0],
+    "history_xray_item_offset": [0, 0],
+    "templates_anchor_offset": [0, 0],
+    "template_use_offset": [0, 0],
+    "template_owner_dropdown_offset": [0, 0],
+    "template_owner_only_mine_offset": [0, 0],
+    "template_diagnosis_clear_cross_offset": [0, 0],
+    "diagnosis_drop_offset": [0, 0],
+    "diagnosis_code_offset": [0, 0],
+    "diagnosis_cancel_item_offset": [0, 0],
+    "diagnosis_close_item_offset": [0, 0],
+    "xray_field_description_offset": [0, 0],
+    "xray_field_conclusion_offset": [0, 0],
+    "inpatient_yes_button_offset": [0, 0],
+    "add_diagnosis_no_button_offset": [0, 0],
+    "case_result_label_offset": [0, 0],
+    "case_outcome_label_offset": [0, 0],
+    "case_close_current_diagnosis_offset": [0, 0],
+    "epicrisis_yes_signed_offset": [0, 0]
+  },
+  "ris": {}
+}
