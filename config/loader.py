@@ -66,4 +66,3 @@ if not configured_tesseract or not Path(configured_tesseract).exists():
     portable = tesseract_exe()
     if portable.exists():
         COMMON_SETTINGS["tesseract_path"] = str(portable)
-
