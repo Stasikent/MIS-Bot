@@ -26,28 +26,34 @@ jobs:
         run: |
           from pathlib import Path
           import base64
+          import gzip
           import hashlib
 
           jobs = [
               (
-                  Path('.sync_large/main_window'),
+                  Path('.sync_large/main_window_gz'),
                   Path('gui/main_window.py'),
                   'd11bd96ccd19d23ad744e1cc6db9227d7aabbb499eaba0302b6a4fd4b37a59d9',
               ),
               (
-                  Path('.sync_large/bot_mode1_current'),
+                  Path('.sync_large/bot_mode1_current_gz'),
                   Path('project/bot_mode1_current.py'),
                   'cf754fc4d406679b7d321e784ca42e6f6ad1b9d03f956fea8eb8e4c27fe7963b',
               ),
           ]
 
+          completed = 0
           for parts_dir, target, expected_sha256 in jobs:
               parts = sorted(parts_dir.glob('part-*.b64'))
-              if not parts:
-                  print(f'SKIP: no chunks for {target}')
+              done_marker = parts_dir / 'READY'
+              if not done_marker.exists():
+                  print(f'SKIP: {target} is not marked READY')
                   continue
+              if not parts:
+                  raise SystemExit(f'READY exists but no chunks for {target}')
               encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
-              data = base64.b64decode(encoded, validate=True)
+              packed = base64.b64decode(encoded, validate=True)
+              data = gzip.decompress(packed)
               actual = hashlib.sha256(data).hexdigest()
               if actual != expected_sha256:
                   raise SystemExit(
@@ -55,18 +61,23 @@ jobs:
                   )
               target.parent.mkdir(parents=True, exist_ok=True)
               target.write_bytes(data)
+              completed += 1
               print(f'OK: {target} {len(data)} bytes sha256={actual}')
+
+          if completed == 0:
+              print('No READY payloads yet')
 
       - name: Commit reconstructed files
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf .sync_large
-          git add gui/main_window.py project/bot_mode1_current.py .sync_large || true
+          if [ -f .sync_large/main_window_gz/READY ]; then rm -rf .sync_large/main_window .sync_large/main_window_gz; fi
+          if [ -f .sync_large/bot_mode1_current_gz/READY ]; then rm -rf .sync_large/bot_mode1_current_gz; fi
+          git add -A gui/main_window.py project/bot_mode1_current.py .sync_large || true
           if git diff --cached --quiet; then
             echo "Nothing to commit"
             exit 0
           fi
-          git commit -m "sync: restore full main GUI and bot runtime"
+          git commit -m "sync: restore verified full main GUI and bot runtime"
           git push origin HEAD:major-update-2026-08
