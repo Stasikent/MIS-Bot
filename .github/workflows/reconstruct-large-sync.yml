@@ -1,0 +1,72 @@
+name: Reconstruct large sync files
+
+on:
+  push:
+    branches:
+      - major-update-2026-08
+    paths:
+      - '.sync_large/**'
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruct:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: major-update-2026-08
+          fetch-depth: 0
+
+      - name: Reconstruct and verify files
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import hashlib
+
+          jobs = [
+              (
+                  Path('.sync_large/main_window'),
+                  Path('gui/main_window.py'),
+                  'd11bd96ccd19d23ad744e1cc6db9227d7aabbb499eaba0302b6a4fd4b37a59d9',
+              ),
+              (
+                  Path('.sync_large/bot_mode1_current'),
+                  Path('project/bot_mode1_current.py'),
+                  'cf754fc4d406679b7d321e784ca42e6f6ad1b9d03f956fea8eb8e4c27fe7963b',
+              ),
+          ]
+
+          for parts_dir, target, expected_sha256 in jobs:
+              parts = sorted(parts_dir.glob('part-*.b64'))
+              if not parts:
+                  print(f'SKIP: no chunks for {target}')
+                  continue
+              encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
+              data = base64.b64decode(encoded, validate=True)
+              actual = hashlib.sha256(data).hexdigest()
+              if actual != expected_sha256:
+                  raise SystemExit(
+                      f'SHA256 mismatch for {target}: {actual} != {expected_sha256}'
+                  )
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(data)
+              print(f'OK: {target} {len(data)} bytes sha256={actual}')
+
+      - name: Commit reconstructed files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf .sync_large
+          git add gui/main_window.py project/bot_mode1_current.py .sync_large || true
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "sync: restore full main GUI and bot runtime"
+          git push origin HEAD:major-update-2026-08
