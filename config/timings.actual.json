@@ -1,0 +1,16 @@
+{
+  "page_open_wait": 2.5,
+  "search_result_wait": 1.2,
+  "open_card_wait": 1.5,
+  "after_start_wait": 9.0,
+  "after_finish_wait": 2.5,
+
+  "service_window_wait": 1.5,
+  "history_menu_wait": 1.2,
+  "without_referral_timeout": 3.5,
+  "template_load_wait": 2.5,
+
+  "wait_checks": 3,
+  "wait_pause": 3.0,
+  "wait_probe_timeout": 0.5
+}
