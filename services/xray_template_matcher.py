@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
+from services.runtime_paths import config_path
 
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "xray_template_map.json"
+CONFIG_PATH = config_path("xray_template_map.json")
 
 
 def normalize_text(text: str) -> str:
