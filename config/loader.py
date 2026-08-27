@@ -1,63 +1,69 @@
+from __future__ import annotations
+
 import json
-import sys
 from pathlib import Path
 
-# При запуске из EXE PyInstaller распаковывает ресурсы во временную папку,
-# но config удобнее читать рядом с самим exe.
-if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys._MEIPASS)
-    EXE_DIR = Path(sys.executable).resolve().parent
-    CONFIG_DIR = EXE_DIR / "config"
-else:
-    BASE_DIR = Path(__file__).resolve().parent
-    EXE_DIR = None
-    CONFIG_DIR = BASE_DIR
-
-print("[CONFIG] BASE_DIR =", BASE_DIR)
-if EXE_DIR is not None:
-    print("[CONFIG] EXE_DIR =", EXE_DIR)
-print("[CONFIG] CONFIG_DIR =", CONFIG_DIR)
+from services.runtime_paths import CONFIG_DIR, config_path, tesseract_exe
 
 
-def load_json(name: str) -> dict:
-    path = CONFIG_DIR / name
+def load_json(filename: str):
+    path = config_path(filename)
+    print(f"[CONFIG] loading {path}")
 
     if not path.exists():
-        raise FileNotFoundError(f"Не найден config файл: {path}")
+        raise FileNotFoundError(f"Конфиг не найден: {path}")
 
-    print("[CONFIG] loading", path)
-    with open(path, "r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    print("[CONFIG] loaded", name, "=>", data)
+
+    print(f"[CONFIG] loaded {filename} => {data}")
     return data
 
-def save_json(name: str, data: dict):
-    path = CONFIG_DIR / name
-    with open(path, "w", encoding="utf-8") as f:
+
+def save_json(filename: str, data):
+    path = CONFIG_DIR / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print("[CONFIG] saved", path)
+
+    return path
+
 
 def save_setting(section: str, key: str, value):
-    data = load_json("settings.json")
+    settings = load_json("settings.json")
+    settings.setdefault(section, {})[key] = value
+    save_json("settings.json", settings)
 
-    if section not in data:
-        data[section] = {}
+    # Обновляем модульные dict-и там, где это возможно.
+    if section == "common":
+        COMMON_SETTINGS[key] = value
+    elif section == "mis":
+        MIS_SETTINGS[key] = value
+    elif section == "ris":
+        RIS_SETTINGS[key] = value
 
-    data[section][key] = value
-
-    save_json("settings.json", data)
 
 settings = load_json("settings.json")
-coords = load_json("coordinates.json")
+coordinates = load_json("coordinates.json")
 templates = load_json("templates.json")
 timings = load_json("timings.json")
 
-COMMON_SETTINGS = settings.get("common", {})
-MIS_SETTINGS = settings.get("mis", {})
-RIS_SETTINGS = settings.get("ris", {})
+COMMON_SETTINGS = settings.setdefault("common", {})
+MIS_SETTINGS = settings.setdefault("mis", {})
+RIS_SETTINGS = settings.setdefault("ris", {})
 
-MIS_COORDS = coords.get("mis", coords)
-RIS_COORDS = coords.get("ris", coords)
+MIS_COORDS = coordinates.setdefault("mis", {})
+RIS_COORDS = coordinates.setdefault("ris", {})
 
-MIS_TEMPLATES = templates.get("mis", templates)
-RIS_TEMPLATES = templates.get("ris", templates)
+MIS_TEMPLATES = templates.setdefault("mis", {})
+RIS_TEMPLATES = templates.setdefault("ris", {})
+
+# Портативная версия: если путь из settings.json отсутствует,
+# используем tesseract рядом с приложением.
+configured_tesseract = str(COMMON_SETTINGS.get("tesseract_path", "") or "").strip()
+if not configured_tesseract or not Path(configured_tesseract).exists():
+    portable = tesseract_exe()
+    if portable.exists():
+        COMMON_SETTINGS["tesseract_path"] = str(portable)
+
