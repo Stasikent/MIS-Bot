@@ -6,6 +6,7 @@ on:
       - major-update-2026-08
     paths:
       - '.sync_large/**'
+      - '.sync_patch/**'
 
 permissions:
   contents: write
@@ -21,7 +22,7 @@ jobs:
           ref: major-update-2026-08
           fetch-depth: 0
 
-      - name: Reconstruct and verify files
+      - name: Reconstruct and verify large files
         shell: python
         run: |
           from pathlib import Path
@@ -47,7 +48,6 @@ jobs:
               parts = sorted(parts_dir.glob('part-*.b64'))
               done_marker = parts_dir / 'READY'
               if not done_marker.exists():
-                  print(f'SKIP: {target} is not marked READY')
                   continue
               if not parts:
                   raise SystemExit(f'READY exists but no chunks for {target}')
@@ -56,28 +56,41 @@ jobs:
               data = gzip.decompress(packed)
               actual = hashlib.sha256(data).hexdigest()
               if actual != expected_sha256:
-                  raise SystemExit(
-                      f'SHA256 mismatch for {target}: {actual} != {expected_sha256}'
-                  )
+                  raise SystemExit(f'SHA256 mismatch for {target}: {actual} != {expected_sha256}')
               target.parent.mkdir(parents=True, exist_ok=True)
               target.write_bytes(data)
               completed += 1
               print(f'OK: {target} {len(data)} bytes sha256={actual}')
 
           if completed == 0:
-              print('No READY payloads yet')
+              print('No READY large payloads')
 
-      - name: Commit reconstructed files
+      - name: Apply verified source patches
+        shell: bash
+        run: |
+          set -e
+          if [ -f .sync_patch/runtime_patch.py ]; then
+            python .sync_patch/runtime_patch.py
+          else
+            echo "No runtime patch"
+          fi
+
+      - name: Compile patched Python sources
+        shell: bash
+        run: |
+          python -m py_compile project/bot_mode1_current.py project/xray_flow.py gui/main_window.py
+
+      - name: Commit reconstructed or patched files
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -f .sync_large/main_window_gz/READY ]; then rm -rf .sync_large/main_window .sync_large/main_window_gz; fi
           if [ -f .sync_large/bot_mode1_current_gz/READY ]; then rm -rf .sync_large/bot_mode1_current_gz; fi
-          git add -A gui/main_window.py project/bot_mode1_current.py .sync_large || true
+          git add -A gui/main_window.py project/bot_mode1_current.py project/xray_flow.py .sync_large || true
           if git diff --cached --quiet; then
             echo "Nothing to commit"
             exit 0
           fi
-          git commit -m "sync: restore verified full main GUI and bot runtime"
+          git commit -m "fix: harden Win32 click and key dispatch"
           git push origin HEAD:major-update-2026-08
