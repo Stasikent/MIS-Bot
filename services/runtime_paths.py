@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -69,7 +68,7 @@ def ensure_external_file(relative_path: str) -> Path:
         return dst
 
     src = BUNDLE_DIR / relative_path
-    if src.exists() and src.is_file():
+    if src.exists() and src.is_file() and src.resolve() != dst.resolve():
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 
@@ -77,7 +76,40 @@ def ensure_external_file(relative_path: str) -> Path:
 
 
 def config_path(name: str) -> Path:
-    return ensure_external_file(f"config/{name}")
+    """
+    Return a writable workstation config path.
+
+    Private settings.json and coordinates.json are intentionally not tracked by
+    Git. On a fresh source checkout (or a build that contains only examples),
+    bootstrap them once from the corresponding *.example.json files.
+    Existing workstation files are never overwritten.
+    """
+    dst = ensure_external_file(f"config/{name}")
+    if dst.exists():
+        return dst
+
+    example_names = {
+        "settings.json": "settings.example.json",
+        "coordinates.json": "coordinates.example.json",
+    }
+    example_name = example_names.get(name)
+    if not example_name:
+        return dst
+
+    candidates = [
+        CONFIG_DIR / example_name,
+        BUNDLE_CONFIG_DIR / example_name,
+    ]
+    for src in candidates:
+        try:
+            if src.exists() and src.is_file() and src.resolve() != dst.resolve():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                return dst
+        except OSError:
+            continue
+
+    return dst
 
 
 def template_path(filename: str) -> Path:
