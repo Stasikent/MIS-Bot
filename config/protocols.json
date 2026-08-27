@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "fluoro": [
+    {
+      "key": "normal",
+      "name": "Норма",
+      "template_key": "template_row_normal",
+      "aliases": [
+        "норма"
+      ]
+    },
+    {
+      "key": "cardiomegaly",
+      "name": "Кардиомегалия",
+      "template_key": "template_row_cardiomegaly",
+      "aliases": [
+        "кардиомегалия"
+      ]
+    },
+    {
+      "key": "two_projections",
+      "name": "2 Проекции",
+      "template_key": "template_row_two_projections",
+      "aliases": [
+        "2 проекции",
+        "две проекции"
+      ]
+    },
+    {
+      "key": "manual_edit",
+      "name": "Свой протокол",
+      "template_key": "template_row_normal",
+      "aliases": [
+        "свой протокол"
+      ]
+    },
+    {
+      "key": "custom_1",
+      "name": "Тестовый",
+      "template_key": "template_row_custom_1",
+      "aliases": []
+    }
+  ],
+  "xray": []
+}

@@ -100,29 +100,14 @@
       "confidence": 0.9
     },
     "study_date_label": {
-    "file": "study_date_label.png",
-    "confidence": 0.82,
-    "description": "Якорь поля даты исследования"
+      "file": "study_date_label.png",
+      "confidence": 0.82,
+      "description": "Якорь поля даты исследования"
     },
     "diagnosis_cancel_item": {
       "file": "diagnosis_cancel_item.png",
       "confidence": 0.8,
       "description": "Пункт Отменить в диагнозе"
-    },
-    "xray_service_item": {
-      "file": "xray_service_item.png",
-      "confidence": 0.82,
-      "description": "Пункт Рентгенографическое исследование (униф.)"
-    },
-    "template_owner_dropdown": {
-      "file": "template_owner_dropdown.png",
-      "confidence": 0.82,
-      "description": "Выпадающий список Владелец в окне шаблонов"
-    },
-    "template_owner_only_mine": {
-      "file": "template_owner_only_mine.png",
-      "confidence": 0.82,
-      "description": "Пункт Только свои в списке владельца шаблонов"
     },
     "xray_service_item": {
       "file": "xray_service_item.png",
@@ -144,7 +129,6 @@
       "confidence": 0.82,
       "description": "Красный крест диагноза в шаблоне"
     },
-
     "template_row_xray_abdomen": {
       "file": "template_row_xray_abdomen.png",
       "confidence": 0.82,
@@ -270,7 +254,6 @@
       "confidence": 0.82,
       "description": "Рентген шаблон: Носоглотка А3 ст"
     },
-
     "xray_field_study_number": {
       "file": "xray_field_study_number.png",
       "confidence": 0.82,
@@ -330,6 +313,31 @@
       "file": "add_diagnosis_no_button.png",
       "confidence": 0.82,
       "description": "Кнопка Нет в окне добавления диагноза"
+    },
+    "diagnosis_close_item": {
+      "file": "diagnosis_close_item.png",
+      "confidence": 0.82,
+      "description": "Пункт Закрыть в меню активного диагноза"
+    },
+    "case_result_label": {
+      "file": "case_result_label.png",
+      "confidence": 0.82,
+      "description": "Поле Результат случая в окне Закрытие случая"
+    },
+    "case_outcome_label": {
+      "file": "case_outcome_label.png",
+      "confidence": 0.82,
+      "description": "Поле Исход заболевания в окне Закрытие случая"
+    },
+    "case_close_current_diagnosis": {
+      "file": "case_close_current_diagnosis.png",
+      "confidence": 0.82,
+      "description": "Кнопка Закрыть с текущим диагнозом"
+    },
+    "epicrisis_yes_signed": {
+      "file": "epicrisis_yes_signed.png",
+      "confidence": 0.82,
+      "description": "Кнопка Да с подписью"
     }
   },
   "ris": {

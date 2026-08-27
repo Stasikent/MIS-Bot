@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 import pyautogui
 
 from config.loader import CONFIG_DIR
-from gui.labeled_point_pick_overlay import pick_labeled_point
+from gui.mis_window_overlay import pick_point_in_mis
 from project.bot_mode1_current import (
     find_mis_window,
     locate_image_on_screen,
@@ -18,7 +18,7 @@ COORDS_PATH = CONFIG_DIR / "coordinates.json"
 CLICK_TARGETS = [
     {
         "key": "visit_plus",
-        "title": "visit_plus",
+        "title": "Открытие приёма",
         "type": "template_offset",
         "template_key": "visit_plus",
         "offset_key": "visit_plus_offset",
@@ -26,7 +26,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "reason_field",
-        "title": "reason_field",
+        "title": "Повод обращения",
         "type": "template_offset",
         "template_key": "reason_field",
         "offset_key": "reason_field_offset",
@@ -34,7 +34,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "goal_dropdown",
-        "title": "goal_dropdown",
+        "title": "Цель обращения",
         "type": "template_offset",
         "template_key": "goal_dropdown",
         "offset_key": "goal_dropdown_offset",
@@ -42,7 +42,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "history_menu",
-        "title": "history_menu",
+        "title": "История болезни",
         "type": "template_offset",
         "template_key": "history_menu",
         "offset_key": "history_menu_offset",
@@ -50,15 +50,23 @@ CLICK_TARGETS = [
     },
     {
         "key": "history_fluoro_item",
-        "title": "history_fluoro_item",
+        "title": "Флюорографическое исследование",
         "type": "template_offset",
         "template_key": "history_fluoro_item",
         "offset_key": "history_fluoro_item_offset",
         "description": "Клик по пункту флюорографического исследования.",
     },
     {
+        "key": "history_xray_item",
+        "title": "Рентгенографическое исследование",
+        "type": "template_offset",
+        "template_key": "history_xray_item",
+        "offset_key": "history_xray_item_offset",
+        "description": "Клик по пункту рентгенографического исследования.",
+    },
+    {
         "key": "templates_anchor",
-        "title": "templates_anchor",
+        "title": "Кнопка «Шаблоны»",
         "type": "template_offset",
         "template_key": "templates_anchor",
         "offset_key": "templates_anchor_offset",
@@ -66,7 +74,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "template_use",
-        "title": "template_use",
+        "title": "Выбор шаблона",
         "type": "template_offset",
         "template_key": "template_use",
         "offset_key": "template_use_offset",
@@ -74,7 +82,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "service_price_zero",
-        "title": "service_price_zero",
+        "title": "Строка услуги",
         "type": "template_offset",
         "template_key": "service_price_zero",
         "offset_key": "service_price_zero_offset",
@@ -82,7 +90,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "work_plus",
-        "title": "work_plus",
+        "title": "Добавление услуги",
         "type": "template_offset",
         "template_key": "work_plus",
         "offset_key": "work_plus_offset",
@@ -90,7 +98,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "diagnosis_drop",
-        "title": "diagnosis_drop",
+        "title": "Меню диагноза",
         "type": "template_offset",
         "template_key": "diagnosis_drop",
         "offset_key": "diagnosis_drop_offset",
@@ -98,7 +106,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "diagnosis_code",
-        "title": "diagnosis_code",
+        "title": "Выбор диагноза",
         "type": "template_offset",
         "template_key": "diagnosis_code",
         "offset_key": "diagnosis_code_offset",
@@ -106,7 +114,7 @@ CLICK_TARGETS = [
     },
     {
         "key": "diagnosis_cancel_item",
-        "title": "diagnosis_cancel_item",
+        "title": "Отмена диагноза",
         "type": "template_offset",
         "template_key": "diagnosis_cancel_item",
         "offset_key": "diagnosis_cancel_item_offset",
@@ -114,14 +122,14 @@ CLICK_TARGETS = [
     },
     {
         "key": "dob_click_point",
-        "title": "dob_click_point",
+        "title": "Выбор пациента по дате рождения",
         "type": "absolute_point",
         "point_key": "dob_click_point",
         "description": "Абсолютная точка клика по найденной строке пациента.",
     },
     {
         "key": "work_plus_fallback_point",
-        "title": "work_plus_fallback_point",
+        "title": "Запасная точка добавления услуги",
         "type": "absolute_point",
         "point_key": "work_plus_fallback_point",
         "description": "Запасная точка клика по work_plus.",
@@ -131,8 +139,8 @@ CLICK_TARGETS = [
 class ClickMapWindow(tk.Toplevel):
     def __init__(self, parent, on_saved=None):
         super().__init__(parent)
-        self.title("Карта кликов")
-        self.geometry("980x620")
+        self.title("Коррекция рабочего места")
+        self.geometry("1040x680")
         self.transient(parent)
         self.grab_set()
 
@@ -153,38 +161,111 @@ class ClickMapWindow(tk.Toplevel):
             json.dump(self.data, f, ensure_ascii=False, indent=2)
 
     def _build_ui(self):
-        root = ttk.Frame(self, padding=10)
+        root = ttk.Frame(self, padding=12)
         root.pack(fill="both", expand=True)
 
-        left = ttk.Frame(root)
+        intro = ttk.Label(
+            root,
+            text=(
+                "Здесь можно проверить и исправить отдельные действия программы. "
+                "Если рабочее место настраивается впервые, используйте "
+                "«Первоначальную настройку рабочего места»."
+            ),
+            wraplength=980,
+            justify="left",
+        )
+        intro.pack(fill="x", pady=(0, 10))
+
+        toolbar = ttk.Frame(root)
+        toolbar.pack(fill="x", pady=(0, 10))
+
+        ttk.Button(
+            toolbar,
+            text="Проверить всё",
+            command=self.verify_all,
+        ).pack(side="left")
+
+        ttk.Button(
+            toolbar,
+            text="Обновить список",
+            command=self.reload_data,
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            toolbar,
+            text="Закрыть",
+            command=self.destroy,
+        ).pack(side="right")
+
+        body = ttk.Frame(root)
+        body.pack(fill="both", expand=True)
+
+        left = ttk.Frame(body)
         left.pack(side="left", fill="y")
 
-        right = ttk.Frame(root)
-        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        right = ttk.Frame(body)
+        right.pack(side="left", fill="both", expand=True, padx=(14, 0))
 
-        self.listbox = tk.Listbox(left, width=34, height=28, exportselection=False)
+        ttk.Label(
+            left,
+            text="Действия программы",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w", pady=(0, 6))
+
+        self.listbox = tk.Listbox(
+            left,
+            width=38,
+            height=30,
+            exportselection=False,
+        )
         self.listbox.pack(fill="y", expand=True)
         self.listbox.bind("<<ListboxSelect>>", self._on_select)
 
-        self.title_label = ttk.Label(right, text="Точка", font=("Segoe UI", 11, "bold"))
+        self.title_label = ttk.Label(
+            right,
+            text="Действие",
+            font=("Segoe UI", 12, "bold"),
+        )
         self.title_label.pack(anchor="w")
 
-        self.desc_label = ttk.Label(right, text="", wraplength=620, justify="left")
+        self.desc_label = ttk.Label(
+            right,
+            text="",
+            wraplength=660,
+            justify="left",
+        )
         self.desc_label.pack(anchor="w", pady=(6, 10))
 
-        self.value_label = ttk.Label(right, text="", justify="left", foreground="#444444")
+        self.value_label = ttk.Label(
+            right,
+            text="",
+            justify="left",
+            foreground="#444444",
+        )
         self.value_label.pack(anchor="w", pady=(0, 12))
 
         btns = ttk.Frame(right)
         btns.pack(fill="x", pady=(0, 10))
 
-        ttk.Button(btns, text="Показать точку", command=self.show_point).pack(side="left")
-        ttk.Button(btns, text="Пробный клик", command=self.test_click).pack(side="left", padx=6)
-        ttk.Button(btns, text="Настроить", command=self.calibrate).pack(side="left")
-        ttk.Button(btns, text="Обновить", command=self.reload_data).pack(side="left", padx=6)
-        ttk.Button(btns, text="Закрыть", command=self.destroy).pack(side="right")
+        ttk.Button(
+            btns,
+            text="Проверить",
+            command=self.show_point,
+        ).pack(side="left")
 
-        self.log_text = tk.Text(right, height=18, wrap="word")
+        ttk.Button(
+            btns,
+            text="Пробный клик",
+            command=self.test_click,
+        ).pack(side="left", padx=6)
+
+        ttk.Button(
+            btns,
+            text="Изменить",
+            command=self.calibrate,
+        ).pack(side="left")
+
+        self.log_text = tk.Text(right, height=20, wrap="word")
         self.log_text.pack(fill="both", expand=True)
 
     def _log(self, text):
@@ -221,19 +302,21 @@ class ClickMapWindow(tk.Toplevel):
 
         if self.current["type"] == "template_offset":
             value = self.data.get("mis", {}).get(self.current["offset_key"], [0, 0])
+            state = "настроено" if value is not None else "не настроено"
             self.value_label.config(
-                text=f"Тип: шаблон + offset\ntemplate_key: {self.current['template_key']}\noffset: {value}"
+                text=f"Состояние: {state}\nСохранённая поправка: {value}"
             )
         else:
-            value = self.data.get("mis", {}).get(self.current["point_key"], [0, 0])
+            value = self.data.get("mis", {}).get(self.current["point_key"])
+            state = "настроено" if value and len(value) == 2 else "не настроено"
             self.value_label.config(
-                text=f"Тип: абсолютная точка\npoint_key: {self.current['point_key']}\nvalue: {value}"
+                text=f"Состояние: {state}\nСохранённая точка: {value if value else 'нет'}"
             )
 
     def reload_data(self):
         self.data = self._load_coords()
         self._render_current()
-        self._log("coordinates.json перечитан")
+        self._log("Настройки перечитаны с диска")
 
     def _get_template_final_point(self):
         template_key = self.current["template_key"]
@@ -302,6 +385,43 @@ class ClickMapWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Ошибка", str(e), parent=self)
 
+    def verify_all(self):
+        self._log("")
+        self._log("=== Проверка рабочего места ===")
+
+        ok_count = 0
+        fail_count = 0
+
+        for item in CLICK_TARGETS:
+            title = item["title"]
+
+            try:
+                if item["type"] == "template_offset":
+                    loc = locate_image_on_screen(item["template_key"], timeout=1.5)
+                    ok = bool(loc)
+                else:
+                    point = self.data.get("mis", {}).get(item["point_key"])
+                    ok = bool(point and len(point) == 2)
+
+                if ok:
+                    self._log(f"[OK] {title}")
+                    ok_count += 1
+                else:
+                    self._log(f"[ТРЕБУЕТ ПРОВЕРКИ] {title}")
+                    fail_count += 1
+
+            except Exception as e:
+                self._log(f"[ОШИБКА] {title}: {e}")
+                fail_count += 1
+
+        messagebox.showinfo(
+            "Проверка рабочего места",
+            f"Работают/настроены: {ok_count}\n"
+            f"Требуют внимания: {fail_count}\n\n"
+            "Подробности показаны в журнале.",
+            parent=self,
+        )
+
     def calibrate(self):
         if not self.current:
             return
@@ -312,7 +432,7 @@ class ClickMapWindow(tk.Toplevel):
             else:
                 self._calibrate_absolute_point()
         except Exception as e:
-            messagebox.showerror("Ошибка калибровки", str(e), parent=self)
+            messagebox.showerror("Ошибка настройки", str(e), parent=self)
 
     def _calibrate_template_offset(self):
         template_key = self.current["template_key"]
@@ -325,14 +445,14 @@ class ClickMapWindow(tk.Toplevel):
         self.withdraw()
         self.update()
         try:
-            picked = pick_labeled_point(self.master, f"Кликни правильную точку для {self.current['title']}")
+            picked = pick_point_in_mis(self.master, f"Кликни правильную точку для {self.current['title']}")
         finally:
             self.deiconify()
             self.lift()
             self.focus_force()
 
         if not picked:
-            self._log("Калибровка отменена")
+            self._log("Изменение отменено")
             return
 
         picked_x, picked_y = picked
@@ -360,14 +480,14 @@ class ClickMapWindow(tk.Toplevel):
         self.withdraw()
         self.update()
         try:
-            picked = pick_labeled_point(self.master, f"Кликни правильную точку для {self.current['title']}")
+            picked = pick_point_in_mis(self.master, f"Кликни правильную точку для {self.current['title']}")
         finally:
             self.deiconify()
             self.lift()
             self.focus_force()
 
         if not picked:
-            self._log("Калибровка отменена")
+            self._log("Изменение отменено")
             return
 
         picked_x, picked_y = picked
