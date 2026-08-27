@@ -22,75 +22,28 @@ jobs:
           ref: major-update-2026-08
           fetch-depth: 0
 
-      - name: Reconstruct and verify large files
-        shell: python
-        run: |
-          from pathlib import Path
-          import base64
-          import gzip
-          import hashlib
-
-          jobs = [
-              (
-                  Path('.sync_large/main_window_gz'),
-                  Path('gui/main_window.py'),
-                  'd11bd96ccd19d23ad744e1cc6db9227d7aabbb499eaba0302b6a4fd4b37a59d9',
-              ),
-              (
-                  Path('.sync_large/bot_mode1_current_gz'),
-                  Path('project/bot_mode1_current.py'),
-                  'cf754fc4d406679b7d321e784ca42e6f6ad1b9d03f956fea8eb8e4c27fe7963b',
-              ),
-          ]
-
-          completed = 0
-          for parts_dir, target, expected_sha256 in jobs:
-              parts = sorted(parts_dir.glob('part-*.b64'))
-              done_marker = parts_dir / 'READY'
-              if not done_marker.exists():
-                  continue
-              if not parts:
-                  raise SystemExit(f'READY exists but no chunks for {target}')
-              encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
-              packed = base64.b64decode(encoded, validate=True)
-              data = gzip.decompress(packed)
-              actual = hashlib.sha256(data).hexdigest()
-              if actual != expected_sha256:
-                  raise SystemExit(f'SHA256 mismatch for {target}: {actual} != {expected_sha256}')
-              target.parent.mkdir(parents=True, exist_ok=True)
-              target.write_bytes(data)
-              completed += 1
-              print(f'OK: {target} {len(data)} bytes sha256={actual}')
-
-          if completed == 0:
-              print('No READY large payloads')
-
-      - name: Apply verified source patches
+      - name: Apply verified source patch
         shell: bash
         run: |
-          set -e
-          if [ -f .sync_patch/runtime_patch.py ]; then
-            python .sync_patch/runtime_patch.py
-          else
-            echo "No runtime patch"
-          fi
-
-      - name: Compile patched Python sources
-        shell: bash
-        run: |
+          set -euxo pipefail
+          python .sync_patch/runtime_patch.py
+          grep -q '"f2": 0x71' project/bot_mode1_current.py
+          grep -q 'current_offset = offset' project/bot_mode1_current.py
+          grep -q 'if not _win32_click(x, y, clicks=clicks, interval=0.15)' project/bot_mode1_current.py
           python -m py_compile project/bot_mode1_current.py project/xray_flow.py gui/main_window.py
+          git diff --check
+          git diff -- project/bot_mode1_current.py
 
-      - name: Commit reconstructed or patched files
+      - name: Commit patched runtime
         shell: bash
         run: |
+          set -euxo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -f .sync_large/main_window_gz/READY ]; then rm -rf .sync_large/main_window .sync_large/main_window_gz; fi
-          if [ -f .sync_large/bot_mode1_current_gz/READY ]; then rm -rf .sync_large/bot_mode1_current_gz; fi
-          git add -A gui/main_window.py project/bot_mode1_current.py project/xray_flow.py .sync_large || true
+          git add project/bot_mode1_current.py
           if git diff --cached --quiet; then
-            echo "Nothing to commit"
-            exit 0
+            echo "ERROR: runtime patch produced no staged change"
+            exit 1
           fi
           git commit -m "fix: harden Win32 click and key dispatch"
           git push origin HEAD:major-update-2026-08
